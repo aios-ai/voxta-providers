@@ -60,7 +60,6 @@ public class UserFunctionProviderSpotify(
             return;
         }
 
-        _cancellationTokenSource = new CancellationTokenSource();
         _ = MonitorSpotifyPlayback(_cancellationTokenSource.Token);
 
         HandleMessage<ServerActionMessage>(async message =>
@@ -139,6 +138,7 @@ public class UserFunctionProviderSpotify(
                     }
                     else
                     {
+                        queueNameString = CleanString(queueNameString);
                         var (queueUri, queueFriendlyName) = await GetSpotifyUri(queueNameString, queueTypeString);
                         if (queueUri != null)
                         {
@@ -175,12 +175,14 @@ public class UserFunctionProviderSpotify(
                 case "repeat_mode":
                     if (!message.TryGetArgument("mode", out var repeatMode))
                         repeatMode = "repeat-track";
+                    repeatMode = CleanString(repeatMode);
                     await SetRepeatMode(repeatMode);
                     SendMessage($"/note As requested {{{{ char }}}} set the repeat mode to: {repeatMode}");
                     break;
                 case "shuffle_mode":
                     if (!message.TryGetArgument("mode", out var shuffleMode))
                         shuffleMode = "off";
+                    shuffleModeBool = CleanString(shuffleModeBool);
                     var shuffleModeBool = shuffleMode == "off" ? false : true;
                     await SetShuffle(shuffleModeBool);
                     SendMessage($"/note As requested {{{{ char }}}} set the shuffle mode to: {shuffleModeBool}");
@@ -630,7 +632,6 @@ public class UserFunctionProviderSpotify(
 
         try
         {
-            // Read the file and deserialize into SpotifyConfig object
             var json = File.ReadAllText(configPath);
             _spotifyConfig = JsonSerializer.Deserialize<SpotifyConfig>(json);
             if (_spotifyConfig == null ||
