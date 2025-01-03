@@ -6,9 +6,9 @@
 
 # Installing Providers
 
-1. Place the provider into the *Voxta.SampleProviderApp\Providers* folder
-2. Place the respective config into *Voxta.SampleProviderApp\Providers\configs* folder
-3. Add each Provider to the **Program.cs** inside the *Voxta.SampleProviderApp* folder
+1. Place the provider into the `Voxta.SampleProviderApp\Providers` folder
+2. Place the respective config into `Voxta.SampleProviderApp\Providers\configs` folder
+3. Add each Provider to the `Program.cs` inside the *Voxta.SampleProviderApp* folder
 
 # Spotify Provider Setup
 
@@ -16,6 +16,7 @@
 2. Create an app to get your: Client ID, Client Secret, Set a Redirect URI (for OAuth2 authentication)
 3. Install the provider
 4. Add those values into the *Voxta.SampleProviderApp\Providers\configs\UserFunctionProviderSpotifyConfig.json*
+5. Open the `Voxta.SampleProviderApp.csproj` file inside the root of the ProviderApp folder and add this line `<PackageReference Include="SpotifyAPI.Web" Version="7.2.1" />` as new PackageReference
 
 # Weather API Provider Setup
 
@@ -31,4 +32,5 @@ For this provider to work we rely on a free external API service: https://openwe
 
 1. Install the provider
 2. Follow the 'Hue Bridge' discovery described in the provider terminal after first launch
-3. (Optional) Add a target light, zone or room name the character can control on it's own: *Voxta.SampleProviderApp\Providers\configs\UserFunctionProviderHueConfig.json*
+3. Open the `Voxta.SampleProviderApp.csproj` file inside the root of the ProviderApp folder and add this line `<PackageReference Include="HueApi" Version="1.7.0" />` and `<PackageReference Include="HueApi.ColorConverters" Version="1.7.1" />` as new PackageReference
+4. (Optional) Add a target light, zone or room name the character can control on it's own: *Voxta.SampleProviderApp\Providers\configs\UserFunctionProviderHueConfig.json*
