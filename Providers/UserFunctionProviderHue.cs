@@ -681,15 +681,13 @@ namespace Voxta.SampleProviderApp.Providers
                         // This match will ensure user action inference is only going to be triggered if this regex matches the message.
                         // For example, if you use "please" in all functions, this can avoid running user action inference at all unless
                         // the user said "please".
-                        //MatchFilter = [\b(?:toggle|change|set|activate|light|lights|room|zone)\b],
+                        //MatchFilter = [@"\b(?:toggle|change|set|activate|light|lights|room|zone)\b"],
                         // Only available when the specific flag is set
                         FlagsFilter = "hueBridge_connected",
                         // Only run in response to the user messages 
                         Timing = FunctionTiming.AfterUserMessage,
                         // Do not generate a response, we will instead handle the action ourselves
                         CancelReply = true,
-                        // Only allow this for characters with the assistant field enabled
-                        AssistantFilter = true,
                         Arguments =
                             [
                                 new FunctionArgumentDefinition
@@ -708,11 +706,10 @@ namespace Voxta.SampleProviderApp.Providers
                         Layer = "HueControl",
                         ShortDescription = "turn off lights",
                         Description = "When {{ user }} asks to turn off the lights.",
-                        //MatchFilter = [\b(?:toggle|change|set|activate|light|lights|room|zone)\b],
+                        //MatchFilter = [@"\b(?:toggle|change|set|activate|light|lights|room|zone)\b"],
                         FlagsFilter = "hueBridge_connected",
                         Timing = FunctionTiming.AfterUserMessage,
                         CancelReply = true,
-                        AssistantFilter = true,
                         Arguments =
                             [
                                 new FunctionArgumentDefinition
@@ -733,7 +730,6 @@ namespace Voxta.SampleProviderApp.Providers
                     FlagsFilter = "hueBridge_disconnected",
                     Timing = FunctionTiming.AfterUserMessage,
                     CancelReply = true,
-                    AssistantFilter = true,
                 },
                 new()
                 {
@@ -741,11 +737,10 @@ namespace Voxta.SampleProviderApp.Providers
                     Layer = "HueControl",
                     ShortDescription = "change color",
                     Description = "When {{ user }} asks to change the light color.",
-                    //MatchFilter = [\b(?:change|set|activate|light|lights|room|zone|color|colour)\b],
+                    //MatchFilter = [@"\b(?:change|set|activate|light|lights|room|zone|color|colour)\b"],
                     FlagsFilter = "hueBridge_connected",
                     Timing = FunctionTiming.AfterUserMessage,
                     CancelReply = true,
-                    AssistantFilter = true,
                     Arguments =
                         [
                             new FunctionArgumentDefinition
@@ -773,7 +768,6 @@ namespace Voxta.SampleProviderApp.Providers
                     FlagsFilter = "hueBridge_connected",
                     Timing = FunctionTiming.AfterAssistantMessage,
                     CancelReply = true,
-                    AssistantFilter = true,
                     Arguments =
                         [
                             new FunctionArgumentDefinition
@@ -792,11 +786,10 @@ namespace Voxta.SampleProviderApp.Providers
                     Layer = "HueControl",
                     ShortDescription = "change brightness or saturation",
                     Description = "When {{ user }} asks to change the brightness or saturation.",
-                    //MatchFilter = [\b(?:change|set|activate|light|lights|room|zone|brightness)\b],
+                    //MatchFilter = [@"\b(?:change|set|activate|light|lights|room|zone|brightness)\b"],
                     FlagsFilter = "hueBridge_connected",
                     Timing = FunctionTiming.AfterUserMessage,
                     CancelReply = true,
-                    AssistantFilter = true,
                     Arguments =
                         [
                             new FunctionArgumentDefinition
@@ -821,11 +814,11 @@ namespace Voxta.SampleProviderApp.Providers
                     Layer = "HueControl",
                     ShortDescription = "activate scene for a specific room, group or zone",
                     Description = "When {{ user }} asks to activate a scene for a specific room, group or zone.",
-                    //MatchFilter = [\b(?:change|set|activate|light|lights|room|zone|scene)\b],
+                    //MatchFilter = [@"\b(?:change|set|activate|light|lights|room|zone|scene)\b"],
+                    
                     FlagsFilter = "hueBridge_connected",
                     Timing = FunctionTiming.AfterUserMessage,
                     CancelReply = true,
-                    AssistantFilter = true,
                     Arguments =
                         [
                             new FunctionArgumentDefinition

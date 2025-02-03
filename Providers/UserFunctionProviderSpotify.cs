@@ -80,7 +80,7 @@ public class UserFunctionProviderSpotify(
                     SendMessage($"/note As requested {{{{ char }}}} toggled playback to: {(!isPlaying ? "play" : "pause")}");
                     break;
                 case "spotify_connect":
-                    SendMessagePrefix("No active spotify device found. Start playback in one of your clients. ");
+                    SendMessagePrefix("It looks like there is currently no active Spotify client. Please start playback in your browser, desktop or mobile Spotify app. ");
                     break;
                 case "play_random_music":
                     string? randomTrackUri = null;
@@ -112,6 +112,7 @@ public class UserFunctionProviderSpotify(
                     }
                     else
                     {
+                        playNameString = CleanString(playNameString);
                         var (playUri, playFriendlyName) = await GetSpotifyUri(playNameString, playTypeString);
                         if (playUri != null)
                         {
@@ -182,7 +183,7 @@ public class UserFunctionProviderSpotify(
                 case "shuffle_mode":
                     if (!message.TryGetArgument("mode", out var shuffleMode))
                         shuffleMode = "off";
-                    shuffleModeBool = CleanString(shuffleModeBool);
+                    shuffleMode = CleanString(shuffleMode);
                     var shuffleModeBool = shuffleMode == "off" ? false : true;
                     await SetShuffle(shuffleModeBool);
                     SendMessage($"/note As requested {{{{ char }}}} set the shuffle mode to: {shuffleModeBool}");
@@ -337,15 +338,13 @@ public class UserFunctionProviderSpotify(
                     // This match will ensure user action inference is only going to be triggered if this regex matches the message.
                     // For example, if you use "please" in all functions, this can avoid running user action inference at all unless
                     // the user said "please".
-                    //MatchFilter = [\b(?:play|pause|stop|continue|toggle|playback|music)\b.*\bmusic\b],
+                    //MatchFilter =  [@"\b(?:play|pause|stop|continue|toggle|playback|music)\b"],
                     // Only available when the specific flag is set
                     FlagsFilter = "spotify_connected",
                     // Only run in response to the user messages 
                     Timing = FunctionTiming.AfterUserMessage,
                     // Do not generate a response, we will instead handle the action ourselves
                     CancelReply = true,
-                    // Only allow this for characters with the assistant field enabled
-                    AssistantFilter = true,
                 },
                 new()
                 {
@@ -353,11 +352,10 @@ public class UserFunctionProviderSpotify(
                     Layer = "SpotifyControl",
                     ShortDescription = "anything regarding spotify",
                     Description = "When {{ user }} asks to interact with spotify in any way, like playing music, search for an artist, etc.",
-                    //MatchFilter = [\b(?:play|pause|stop|continue|toggle|playback|music)\b.*\bmusic\b],
+                    //MatchFilter =  [@"\b(?:play|pause|stop|continue|toggle|playback|music)\b"],
                     FlagsFilter = "spotify_disconnected",
                     Timing = FunctionTiming.AfterUserMessage,
                     CancelReply = true,
-                    AssistantFilter = true,
                 },
                 new()
                 {
@@ -365,23 +363,21 @@ public class UserFunctionProviderSpotify(
                     Layer = "SpotifyControl",
                     ShortDescription = "play random music",
                     Description = "When {{ user }} asks to play music without mentioning the artist or song.",
-                    //MatchFilter = [\b(?:play|pause|stop|continue|toggle|playback|music)\b.*\bmusic\b],
+                    //MatchFilter =  [@"\b(?:play|pause|stop|continue|toggle|playback|music)\b"],
                     FlagsFilter = "spotify_connected",
                     Timing = FunctionTiming.AfterUserMessage,
                     CancelReply = true,
-                    AssistantFilter = true,
                 },
-                new()
+                new ()
                 {
                     Name = "play_music",
                     Layer = "SpotifyControl",
                     ShortDescription = "play requested music",
                     Description = "When {{ user }} asks to play a specific track, album or artist.",
-                    //MatchFilter = [\b(?:play|pause|stop|continue|toggle|playback|music)\b.*\bmusic\b],
+                    //MatchFilter =  [@"\b(?:play|pause|stop|continue|toggle|playback|music)\b"],
                     FlagsFilter = "spotify_connected",
                     Timing = FunctionTiming.AfterUserMessage,
                     CancelReply = true,
-                    AssistantFilter = true,
                     Arguments =
                     [
                         new FunctionArgumentDefinition
@@ -400,17 +396,16 @@ public class UserFunctionProviderSpotify(
                         }
                     ],
                 },
-                new()
+                new ()
                 {
                     Name = "queue_Track",
                     Layer = "SpotifyControl",
                     ShortDescription = "search on spotify",
                     Description = "When {{ user }} asks to search for albums, artists, episodes, playlists, shows or tracks",
-                    //MatchFilter = [\b(?:play|pause|stop|continue|toggle|playback|music)\b.*\bmusic\b],
+                    //MatchFilter =  [@"\b(?:play|pause|stop|continue|toggle|playback|music)\b"],
                     FlagsFilter = "spotify_connected",
                     Timing = FunctionTiming.AfterUserMessage,
                     CancelReply = true,
-                    AssistantFilter = true,
                     Arguments =
                     [
                         new FunctionArgumentDefinition
@@ -435,11 +430,10 @@ public class UserFunctionProviderSpotify(
                     Layer = "SpotifyControl",
                     ShortDescription = "change volume",
                     Description = "When {{ user }} asks to set the volume to a specific level.",
-                    //MatchFilter = [\b(?:play|pause|stop|continue|toggle|playback|music)\b.*\bmusic\b],
+                    //MatchFilter =  [@"\b(?:play|pause|stop|continue|toggle|playback|music)\b"],
                     FlagsFilter = "playing",
                     Timing = FunctionTiming.AfterUserMessage,
                     CancelReply = true,
-                    AssistantFilter = true,
                     Arguments =
                     [
                         new FunctionArgumentDefinition
@@ -457,11 +451,10 @@ public class UserFunctionProviderSpotify(
                     Layer = "SpotifyControl",
                     ShortDescription = "seek through the track",
                     Description = "When {{ user }} asks go to (seek) a specific position within the current track.",
-                    //MatchFilter = [\b(?:play|pause|stop|continue|toggle|playback|music)\b.*\bmusic\b],
+                    //MatchFilter =  [@"\b(?:seek|skip|jump|forward|backward)\b"],
                     FlagsFilter = "playing",
                     Timing = FunctionTiming.AfterUserMessage,
                     CancelReply = true,
-                    AssistantFilter = true,
                     Arguments =
                     [
                         new FunctionArgumentDefinition
@@ -479,11 +472,10 @@ public class UserFunctionProviderSpotify(
                     Layer = "SpotifyControl",
                     ShortDescription = "skip to the next track",
                     Description = "When {{ user }} asks to skip to next track/song/title.",
-                    //MatchFilter = ["\b(?:next|skip|song)\b"],
+                    //MatchFilter = [@"\b(?:next|skip|song)\b"],
                     FlagsFilter = "playing",
                     Timing = FunctionTiming.AfterUserMessage,
                     CancelReply = true,
-                    AssistantFilter = true
                 },
                 new()
                 {
@@ -491,11 +483,10 @@ public class UserFunctionProviderSpotify(
                     Layer = "SpotifyControl",
                     ShortDescription = "skip to the previous track",
                     Description = "When {{ user }} asks to skip to the previous track/song/title.",
-                    //MatchFilter = ["\b(?:previous|skip|song)\b"],
+                    //MatchFilter = [@"\b(?:previous|skip|song)\b"],
                     FlagsFilter = "playing",
                     Timing = FunctionTiming.AfterUserMessage,
                     CancelReply = true,
-                    AssistantFilter = true
                 },
                 new()
                 {
@@ -506,11 +497,10 @@ public class UserFunctionProviderSpotify(
                     Layer = "SpotifyControl",
                     ShortDescription = "change the repeat mode",
                     Description = "When {{ user }} asks to change the repeat mode to one of the following repeat-track, repeat-context or off",
-                    //MatchFilter = ["\b(?:repeat|track|context|off|disable|enable)\b"],
+                    //MatchFilter = [@"\b(?:repeat|track|context|off|disable|enable)\b"],
                     FlagsFilter = "playing",
                     Timing = FunctionTiming.AfterUserMessage,
                     CancelReply = true,
-                    AssistantFilter = true,
                     Arguments =
                         [
                             new FunctionArgumentDefinition
@@ -528,11 +518,10 @@ public class UserFunctionProviderSpotify(
                     Layer = "SpotifyControl",
                     ShortDescription = "change the shuffle mode",
                     Description = "When {{ user }} asks to change the shuffle mode on or off",
-                    //MatchFilter = ["\b(?:repeat|track|context|off|disable|enable)\b"],
+                    //MatchFilter = [@"\b(?:repeat|track|context|off|disable|enable)\b"],
                     FlagsFilter = "playing",
                     Timing = FunctionTiming.AfterUserMessage,
                     CancelReply = true,
-                    AssistantFilter = true,
                     Arguments =
                         [
                             new FunctionArgumentDefinition
@@ -550,11 +539,10 @@ public class UserFunctionProviderSpotify(
                     Layer = "SpotifyControl",
                     ShortDescription = "list all available playlists",
                     Description = "When {{ user }} asks to list all available playlists",
-                    //MatchFilter = ["\b(?:repeat|track|context|off|disable|enable)\b"],
+                    //MatchFilter = [@"\b(?:repeat|track|context|off|disable|enable)\b"],
                     FlagsFilter = "spotify_connected",
                     Timing = FunctionTiming.AfterUserMessage,
                     CancelReply = true,
-                    AssistantFilter = true,
                 },
                 new()
                 {
@@ -562,11 +550,10 @@ public class UserFunctionProviderSpotify(
                     Layer = "SpotifyControl",
                     ShortDescription = "add to playlist",
                     Description = "When {{ user }} asks to add the current song to a specific device",
-                    //MatchFilter = ["\b(?:repeat|track|context|off|disable|enable)\b"],
+                    //MatchFilter = [@"\b(?:repeat|track|context|off|disable|enable)\b"],
                     FlagsFilter = "spotify_connected",
                     Timing = FunctionTiming.AfterUserMessage,
                     CancelReply = true,
-                    AssistantFilter = true,
                     Arguments =
                         [
                             new FunctionArgumentDefinition
@@ -584,11 +571,10 @@ public class UserFunctionProviderSpotify(
                     Layer = "SpotifyControl",
                     ShortDescription = "list all available devices",
                     Description = "When {{ user }} asks to list all available devices",
-                    //MatchFilter = ["\b(?:repeat|track|context|off|disable|enable)\b"],
+                    //MatchFilter = [@"\b(?:repeat|track|context|off|disable|enable)\b"],
                     FlagsFilter = "spotify_connected",
                     Timing = FunctionTiming.AfterUserMessage,
                     CancelReply = true,
-                    AssistantFilter = true,
                 },
                 new()
                 {
@@ -596,11 +582,10 @@ public class UserFunctionProviderSpotify(
                     Layer = "SpotifyControl",
                     ShortDescription = "transfer to device",
                     Description = "When {{ user }} asks to transfer playback to a specific device",
-                    //MatchFilter = ["\b(?:repeat|track|context|off|disable|enable)\b"],
+                    //MatchFilter = [@"\b(?:repeat|track|context|off|disable|enable)\b"],
                     FlagsFilter = "spotify_connected",
                     Timing = FunctionTiming.AfterUserMessage,
                     CancelReply = true,
-                    AssistantFilter = true,
                     Arguments =
                         [
                             new FunctionArgumentDefinition
@@ -632,6 +617,7 @@ public class UserFunctionProviderSpotify(
 
         try
         {
+            // Read the file and deserialize into SpotifyConfig object
             var json = File.ReadAllText(configPath);
             _spotifyConfig = JsonSerializer.Deserialize<SpotifyConfig>(json);
             if (_spotifyConfig == null ||
@@ -755,7 +741,6 @@ public class UserFunctionProviderSpotify(
         string? code = query["code"];
 
         var response = context.Response;
-        //string responseString = "<html><body>Authentication successful! You can close this tab.</body></html>";
         string responseString = @"
             <html>
             <head>
