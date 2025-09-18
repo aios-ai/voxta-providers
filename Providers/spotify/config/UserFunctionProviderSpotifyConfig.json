@@ -1,9 +1,0 @@
-{
-    "clientId": "",
-    "clientSecret": "",
-    "redirectUri": "",
-	"enableMatchFilter": true,
-    "matchFilterWakeWord": "",
-	"enableCharacterReplies": false,
-	"tokenPath": "Providers\\config\\UserFunctionProviderSpotifyAuth.json"
-}

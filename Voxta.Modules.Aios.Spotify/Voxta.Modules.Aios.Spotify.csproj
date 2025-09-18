@@ -1,0 +1,36 @@
+﻿<Project Sdk="Microsoft.NET.Sdk">
+
+    <PropertyGroup>
+        <TargetFramework>net9.0</TargetFramework>
+        <ImplicitUsings>enable</ImplicitUsings>
+        <Nullable>enable</Nullable>
+        <CopyLocalLockFileAssemblies>true</CopyLocalLockFileAssemblies>
+    </PropertyGroup>
+
+    <ItemGroup>
+        <EmbeddedResource Include="Assets\spotify.png" />
+    </ItemGroup>
+
+    <ItemGroup>
+        <FrameworkReference Include="Microsoft.AspNetCore.App" />
+    </ItemGroup>
+
+    <ItemGroup>
+        <PackageReference Include="SpotifyAPI.Web" Version="7.2.1" />
+        <PackageReference Include="Voxta.Sdk.Modules" Version="1.0.0-beta.150" />
+    </ItemGroup>
+
+    <Target Name="CopyToVoxtaModulesPath" AfterTargets="Build">
+      <Message Condition=" '$(VoxtaModulesPath)' == '' "
+               Importance="high"
+               Text="Warning: VoxtaModulesPath environment variable is not set. Output will not be copied." />
+      <Message Condition=" '$(VoxtaModulesPath)' != '' "
+               Importance="high"
+               Text="Copying output to VoxtaModulesPath: $(VoxtaModulesPath)" />
+      <Exec Condition=" '$(VoxtaModulesPath)' != '' "
+            Command="xcopy &quot;$(OutputPath)$(MSBuildProjectName).*&quot; &quot;$(VoxtaModulesPath)\&quot; /Y /Q" />
+        <Exec Condition=" '$(VoxtaModulesPath)' != '' "
+              Command="xcopy &quot;$(OutputPath)SpotifyAPI.Web.*&quot; &quot;$(VoxtaModulesPath)\&quot; /Y /Q" />
+    </Target>
+
+</Project>
