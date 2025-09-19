@@ -31,27 +31,15 @@ public class OpenWeatherChatAugmentationsServiceInstance(
                 SessionId = session.SessionId,
 				Actions =
 				[
-					// Define custom actions
 					new()
 					{
-						// The name used by the LLM to select the action. Make sure to select a clear name.
 						Name = "get_weather",
-                        // Layers allow you to run your actions separately from the scene
                         Layer = "Weather",
-						 // A short description of the action to be included in the functions list, typically used for character action inference
 						ShortDescription = "get the latest weather, temperature or rain data",
-						// The condition for executing this function
 						Description = "When {{ user }} asks for the weather temperature or rain in a specific location.",
-						// This match will ensure user action inference is only going to be triggered if this regex matches the message.
-						// For example, if you use "please" in all functions, this can avoid running user action inference at all unless
-						// the user said "please".
 						MatchFilter =  [@"\b(?:weather|temperature|temperatures|rain|raining|rains|snow|snowing|snows)\b"],
-						// Only run in response to the user messages 
 						Timing = FunctionTiming.AfterUserMessage,
-						// Do not generate a response, we will instead handle the action ourselves
 						CancelReply = true,
-						// Define arguments the character has to choose for the action to be functional
-						// In our case the location for which the weather data has been requested
 						Arguments =
 						[
 							new FunctionArgumentDefinition
@@ -73,6 +61,33 @@ public class OpenWeatherChatAugmentationsServiceInstance(
 						Timing = FunctionTiming.AfterUserMessage,
 						CancelReply = true,
 					},
+					new ()
+					{
+						Name = "get_weather_forecast",
+						Layer = "Weather",
+						ShortDescription = "Get the weather forecast for a specific location and timeframe",
+						Description = "When {{ user }} asks for the weather forecast in a specific location for a certain period of time.",
+						MatchFilter = [@"\b(?:forecast|next|tomorrow|weekend|days|hours)\b"],
+						Timing = FunctionTiming.AfterUserMessage,
+						CancelReply = true,
+						Arguments =
+						[
+							new FunctionArgumentDefinition
+							{
+								Name = "forecast_location",
+								Description = "The location for which the forecast will be retrieved",
+								Required = true,
+								Type = FunctionArgumentType.String,
+							},
+							/*new FunctionArgumentDefinition
+							{
+								Name = "forecast_timeframe",
+								Description = "The timeframe for the forecast (e.g., '3 days', '5 days', 'tomorrow', 'next weekend')",
+								Required = false, // optional, defaults to full API range if not provided
+								Type = FunctionArgumentType.String,
+							}*/
+						],
+					}
 				]
             }
         ];
@@ -100,6 +115,12 @@ public class OpenWeatherChatAugmentationsServiceInstance(
             case "get_weather_mylocation":
 	            await GetWeatherMyLocation(cancellationToken);
 	            return true;
+            case "get_weather_forecast":
+	            var forecastLocation = serverActionMessage.TryGetArgument("forecast_location", out var forecastLocationArg) ? forecastLocationArg : null;
+	            if (string.IsNullOrEmpty(forecastLocation))
+		            throw new ArgumentException("Location argument is missing for get_weather action");
+	            await GetWeatherForecast(forecastLocation, cancellationToken);
+	            return true;
             default:
                 return false;
         }
@@ -126,6 +147,27 @@ public class OpenWeatherChatAugmentationsServiceInstance(
 		await FetchAndSendWeather(location, cancellationToken);
     }
     
+    private async ValueTask GetWeatherForecast(string? forecastLocation, CancellationToken cancellationToken)
+    {
+	    logger.LogInformation("Weather forecast requested for {Location}", forecastLocation);
+	    if (string.IsNullOrWhiteSpace(forecastLocation))
+	    {
+		    logger.LogInformation("Location is not set!");
+		    await session.SendSecretAsync("No weather data available as the user location is not set and no location was specified.", cancellationToken);
+		    await session.TriggerReplyAsync(cancellationToken);
+		    return;
+	    }
+	    
+	    var forecast = await client.FetchForecastData(forecastLocation, chatAugmentationSettings.Units, cancellationToken);
+	    var unitSuffix = chatAugmentationSettings.Units == "imperial" ? "°F" : "°C";
+	    var summaryText = ForecastSummariser.Summarise(forecast.List, days: 5, unitSuffix);
+	    var introText = $"Weather forecast for {forecastLocation} ({forecast.City.Country}):";
+	    var messageText = $"{introText}\n{summaryText}";
+	    
+	    await session.SendSecretAsync(messageText, cancellationToken);
+	    await session.TriggerReplyAsync(cancellationToken);
+    }
+    
 	private async Task FetchAndSendWeather(string location, CancellationToken cancellationToken)
 	{
 		logger.LogInformation("Identified city name: {Location}", location);
@@ -134,14 +176,12 @@ public class OpenWeatherChatAugmentationsServiceInstance(
 		try
 		{
 			var weatherData = await client.FetchWeatherData(location, chatAugmentationSettings.Units, cancellationToken);
-
-			// Build the message text with optional precipitation data
+			
 			var rain = weatherData.Rain?.OneHour ?? 0;
 			var rainPrecipitationText = rain > 0
 				? $" and estimated {rain:F1} mm/h precipitation of rain"
 				: "";
-
-			// Build the message text with optional snow data
+			
 			var snow = weatherData.Snow?.OneHour ?? 0;
 			var snowPrecipitationText = snow > 0
 				? $" and estimated {snow:F1} mm/h precipitation of snow"
@@ -149,9 +189,7 @@ public class OpenWeatherChatAugmentationsServiceInstance(
 
 			var unitSuffix = chatAugmentationSettings.Units == "imperial" ? "°F" : "°C";
 			var messageText = $"The current temperature in {location} ({weatherData.Sys.Country}) is {weatherData.Main.Temp}{unitSuffix} with {weatherData.Weather[0].Description}{rainPrecipitationText}{snowPrecipitationText}. The temperature ranges between {weatherData.Main.TempMin}-{weatherData.Main.TempMax}{unitSuffix}.";
-
-			// Send the current temperature as event into the chat, the character will respond to it
-		    logger.LogInformation("User location is not set! Open the config file and set the variable.");
+			
 		    await session.SendSecretAsync(messageText, cancellationToken);
 		    await session.TriggerReplyAsync(cancellationToken);
 		}
@@ -163,19 +201,15 @@ public class OpenWeatherChatAugmentationsServiceInstance(
 		}
 	}
 	
-	// Function to remove special characters from the location string
 	private static string CleanLocationString(string input)
 	{
 		if (string.IsNullOrWhiteSpace(input))
 			return string.Empty;
-
-		// Replace specific cases where hyphen should be a space
-		input = Regex.Replace(input, @"(?<=[\w])-(?=[\w])", " "); // New-York -> New York
-
-		// Remove all other unwanted characters, preserving alphanumerics and spaces
+		
+		input = Regex.Replace(input, @"(?<=[\w])-(?=[\w])", " ");
+		
 		input = Regex.Replace(input, @"[^\w\s]", "");
-
-		// Normalize whitespace to a single space
+		
 		input = Regex.Replace(input, @"\s+", " ").Trim();
 
 		return input;

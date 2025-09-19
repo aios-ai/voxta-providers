@@ -21,6 +21,141 @@ public class OpenWeatherResponse
     public Precipitation? Snow { get; init; }
 }
 
+public class GeoResult
+{
+    [JsonPropertyName("name")]
+    public required string Name { get; init; }
+
+    // Holds names in different languages, keyed by language code
+    [JsonPropertyName("local_names")]
+    public Dictionary<string, string>? LocalNames { get; init; }
+
+    [JsonPropertyName("lat")]
+    public required double Lat { get; init; }
+
+    [JsonPropertyName("lon")]
+    public required double Lon { get; init; }
+
+    [JsonPropertyName("country")]
+    public required string Country { get; init; }
+
+    // Optional, only present for some countries
+    [JsonPropertyName("state")]
+    public string? State { get; init; }
+}
+
+public class OpenWeatherForecastResponse
+{
+    [JsonPropertyName("cod")]
+    public string? Cod { get; init; }
+
+    [JsonPropertyName("message")]
+    public int? Message { get; init; }
+
+    [JsonPropertyName("cnt")]
+    public int? Count { get; init; }
+
+    [JsonPropertyName("list")]
+    public required List<ForecastItem> List { get; init; }
+
+    [JsonPropertyName("city")]
+    public required ForecastCity City { get; init; }
+}
+
+public class ForecastItem
+{
+    [JsonPropertyName("dt")]
+    public long Dt { get; init; }
+
+    [JsonPropertyName("main")]
+    public required MainInfo Main { get; init; }
+
+    [JsonPropertyName("weather")]
+    public required List<WeatherDetail> Weather { get; init; }
+
+    [JsonPropertyName("clouds")]
+    public required Clouds Clouds { get; init; }
+
+    [JsonPropertyName("wind")]
+    public required Wind Wind { get; init; }
+
+    [JsonPropertyName("visibility")]
+    public int? Visibility { get; init; }
+
+    [JsonPropertyName("pop")]
+    public double? Pop { get; init; }
+
+    [JsonPropertyName("rain")]
+    public Precipitation? Rain { get; init; }
+
+    [JsonPropertyName("snow")]
+    public Precipitation? Snow { get; init; }
+
+    [JsonPropertyName("sys")]
+    public required ForecastSys Sys { get; init; }
+
+    [JsonPropertyName("dt_txt")]
+    public string? DtTxt { get; init; }
+}
+
+
+public class ForecastCity
+{
+    [JsonPropertyName("id")]
+    public int Id { get; init; }
+
+    [JsonPropertyName("name")]
+    public string? Name { get; init; }
+
+    [JsonPropertyName("coord")]
+    public required Coord Coord { get; init; }
+
+    [JsonPropertyName("country")]
+    public string? Country { get; init; }
+
+    [JsonPropertyName("population")]
+    public int? Population { get; init; }
+
+    [JsonPropertyName("timezone")]
+    public int? Timezone { get; init; }
+
+    [JsonPropertyName("sunrise")]
+    public long? Sunrise { get; init; }
+
+    [JsonPropertyName("sunset")]
+    public long? Sunset { get; init; }
+}
+
+public class Clouds
+{
+    [JsonPropertyName("all")]
+    public int All { get; init; }
+}
+
+public class Coord
+{
+    [JsonPropertyName("all")]
+    public int All { get; init; }
+}
+
+public class Wind
+{
+    [JsonPropertyName("speed")]
+    public double Speed { get; init; }
+
+    [JsonPropertyName("deg")]
+    public int Deg { get; init; }
+
+    [JsonPropertyName("gust")]
+    public double? Gust { get; init; }
+}
+
+public class ForecastSys
+{
+    [JsonPropertyName("pod")]
+    public string? Pod { get; init; }
+}
+
 [Serializable]
 public class MainInfo
 {
@@ -58,5 +193,8 @@ public class SysInfo
 public class Precipitation
 {
     [JsonPropertyName("1h")]
-    public required double OneHour { get; init; }
+    public double OneHour { get; init; }
+    
+    [JsonPropertyName("3h")]
+    public double? ThreeHours { get; init; }
 }

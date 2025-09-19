@@ -13,7 +13,7 @@ public class ModuleConfigurationProvider : ModuleConfigurationProviderBase, IMod
         Name = "ApiKey",
         Label = "API Key",
         Required = true,
-        Text = "Create an API key at <a href=\"https://developer.spotify.com/dashboard/\" target=\"_blank\" rel=\"external\">developer.spotify.com</a>.",
+        Text = "Create an API key at <a href=\"https://openweathermap.org/api/\" target=\"_blank\" rel=\"external\">openweathermap.org</a>.",
     };
     
     public static readonly FormTextField MyLocation = new()

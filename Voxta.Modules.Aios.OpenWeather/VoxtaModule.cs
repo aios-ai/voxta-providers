@@ -31,6 +31,7 @@ public class VoxtaModule : IVoxtaModule
             Recommended = true,
             Notes = "Open Weather augmentations.",
             HelpLink = "",
+            Logo = ModuleLogo.EmbeddedResource(typeof(VoxtaModule), "Assets.OpenWeather.png"),
             Augmentations = [AugmentationKey],
             ModuleConfigurationProviderType = typeof(ModuleConfigurationProvider),
             ModuleConfigurationFieldsRequiringReload = ModuleConfigurationProvider.FieldsRequiringReload,
