@@ -17,7 +17,7 @@ public static class CountryCodeMap
         bool first = true;
         while ((line = reader.ReadLine()) != null)
         {
-            if (first) { first = false; continue; } // skip header
+            if (first) { first = false; continue; }
             var parts = line.Split(',');
             if (parts.Length >= 2)
             {

@@ -2,19 +2,15 @@ using System.Globalization;
 using System.Text;
 using Voxta.Modules.Aios.OpenWeather.Clients;
 
-public static class ForecastSummariser
+public static class WeatherForecastSummariser
 {
-    public static string Summarise(List<ForecastItem> forecastItems, int days = 5, string? unitSuffix = null)
+    public static string Summarise(List<ForecastItem> forecastItems, int days = 5, string unitSuffix = "")
     {
         if (forecastItems == null || forecastItems.Count == 0)
             return "No forecast data available.";
 
-        // Default to °C if not provided
-        unitSuffix ??= "°C";
-
         var sb = new StringBuilder();
-
-        // Group by date
+        
         var groupedByDate = forecastItems
             .GroupBy(f => DateTime.Parse(f.DtTxt!, CultureInfo.InvariantCulture).Date)
             .OrderBy(g => g.Key)

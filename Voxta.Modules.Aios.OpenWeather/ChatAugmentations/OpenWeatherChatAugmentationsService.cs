@@ -37,6 +37,7 @@ public class OpenWeatherChatAugmentationsService(
         {
             MyLocation = ModuleConfiguration.GetRequired(ModuleConfigurationProvider.MyLocation),
             Units = ModuleConfiguration.GetRequired(ModuleConfigurationProvider.Units),
+            ExpertMode = ModuleConfiguration.GetRequired(ModuleConfigurationProvider.ExpertMode),
         };
         logger.LogInformation("Chat session {SessionId} has been augmented with {Augmentation}", session.SessionId, VoxtaModule.AugmentationKey);
         return new OpenWeatherChatAugmentationsServiceInstance(session, client, config, logger);

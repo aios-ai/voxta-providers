@@ -36,6 +36,16 @@ public class ModuleConfigurationProvider : ModuleConfigurationProviderBase, IMod
         DefaultValue = "imperial",
     };
     
+    public static readonly FormBooleanField ExpertMode = new()
+    {
+        Name = "ExpertMode",
+        Label = "Show full air pollution details",
+        DefaultValue = false,
+        Text = "When enabled, the AI will display all available pollutant concentrations (CO, NO, NO₂, O₃, SO₂, PM2.5, PM10, NH₃) in air quality reports. " +
+               "When disabled, only the most common values (AQI, PM2.5, PM10, NO₂, O₃) will be shown.",
+    };
+
+    
    public Task<FormField[]> GetModuleConfigurationFieldsAsync(
         IAuthenticationContext auth,
         ISettingsSource settings,
@@ -53,7 +63,8 @@ public class ModuleConfigurationProvider : ModuleConfigurationProviderBase, IMod
                """),
            ApiKey,
            MyLocation,
-           Units
+           Units,
+           ExpertMode
        );
         return Task.FromResult(fields);
     }

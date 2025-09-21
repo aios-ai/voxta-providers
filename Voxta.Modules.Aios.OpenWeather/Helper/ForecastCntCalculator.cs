@@ -5,10 +5,9 @@ public static class ForecastCntCalculator
     public static int CalculateCnt(DateTime now, string timePhrase)
     {
         timePhrase = timePhrase.ToLowerInvariant();
-
-        // Default: full 5 days
+        
         int skipBlocks = 0;
-        int includeBlocks = 8; // one full day
+        int includeBlocks = 8; // full day
 
         if (timePhrase.Contains("this evening"))
         {
@@ -17,13 +16,13 @@ public static class ForecastCntCalculator
             if (now > next18) next18 = next18.AddDays(1);
 
             skipBlocks = (int)Math.Ceiling((next18 - now).TotalHours / 3);
-            includeBlocks = 2; // 18:00 and 21:00
+            includeBlocks = 2;
         }
         else if (timePhrase.Contains("tomorrow"))
         {
             var tomorrowStart = now.Date.AddDays(1);
             skipBlocks = (int)Math.Ceiling((tomorrowStart - now).TotalHours / 3);
-            includeBlocks = 8; // full day
+            includeBlocks = 8;
         }
         else if (timePhrase.Contains("day after tomorrow"))
         {
@@ -31,7 +30,6 @@ public static class ForecastCntCalculator
             skipBlocks = (int)Math.Ceiling((dayAfterStart - now).TotalHours / 3);
             includeBlocks = 8;
         }
-        // You can add more phrases: "weekend", "next week", "tonight", etc.
 
         return skipBlocks + includeBlocks;
     }

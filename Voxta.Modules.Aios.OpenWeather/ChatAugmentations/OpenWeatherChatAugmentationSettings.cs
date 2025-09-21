@@ -4,4 +4,5 @@ public class OpenWeatherChatAugmentationSettings
 {
     public string? MyLocation { get; init; }
     public string? Units { get; init; }
+    public bool ExpertMode { get; init; }
 }

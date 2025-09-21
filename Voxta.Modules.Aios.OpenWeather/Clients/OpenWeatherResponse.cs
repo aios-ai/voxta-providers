@@ -156,6 +156,36 @@ public class ForecastSys
     public string? Pod { get; init; }
 }
 
+public class OpenWeatherAirPollutionResponse
+{
+    public List<AirPollutionData> List { get; set; } = new();
+}
+
+public class AirPollutionData
+{
+    public MainPollution Main { get; set; } = new();
+    public Components Components { get; set; } = new();
+    public long Dt { get; set; }
+}
+
+public class MainPollution
+{
+    public int Aqi { get; set; }
+}
+
+public class Components
+{
+    public double Co { get; set; }
+    public double No { get; set; }
+    public double No2 { get; set; }
+    public double O3 { get; set; }
+    public double So2 { get; set; }
+    public double Pm2_5 { get; set; }
+    public double Pm10 { get; set; }
+    public double Nh3 { get; set; }
+}
+
+
 [Serializable]
 public class MainInfo
 {

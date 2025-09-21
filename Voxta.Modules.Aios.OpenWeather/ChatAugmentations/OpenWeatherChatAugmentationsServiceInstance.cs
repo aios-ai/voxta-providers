@@ -31,13 +31,33 @@ public class OpenWeatherChatAugmentationsServiceInstance(
                 SessionId = session.SessionId,
 				Actions =
 				[
+					/*new()
+					{
+						Name = "get_weather_mylocation",
+						Layer = "Weather",
+						ShortDescription = "get the latest weather, temperature or rain data.",
+						Description = "When {{ user }} asks for the weather, temperature or rain data when the user did not specify a location.",
+						MatchFilter = [@"\b(?:weather|temperature|temperatures|rain|raining|rains|snow|snowing|snows)\b(?![^.]*\b(?:forecast|next|tomorrow|weekend|days?|hours?)\b)"],
+						Timing = FunctionTiming.AfterUserMessage,
+						CancelReply = true,
+					},
+					new ()
+					{
+						Name = "get_weather_forecast_mylocation",
+						Layer = "Weather",
+						ShortDescription = "Get the weather forecast and timeframe",
+						Description = "When {{ user }} asks for the weather forecast for a certain period of time when the user did not specify a location.",
+						MatchFilter = [@"\b(?:forecast|next|tomorrow|weekend|days|hours)\b"],
+						Timing = FunctionTiming.AfterUserMessage,
+						CancelReply = true,
+					},*/
 					new()
 					{
 						Name = "get_weather",
                         Layer = "Weather",
 						ShortDescription = "get the latest weather, temperature or rain data",
-						Description = "When {{ user }} asks for the weather temperature or rain in a specific location.",
-						MatchFilter =  [@"\b(?:weather|temperature|temperatures|rain|raining|rains|snow|snowing|snows)\b"],
+						Description = "When {{ user }} asks for the weather temperature, rain or snow.",
+						MatchFilter = [@"\b(?:weather|temperature|temperatures|rain|raining|rains|snow|snowing|snows)\b(?![^.]*\b(?:forecast|next|tomorrow|weekend|days?|hours?)\b)"],
 						Timing = FunctionTiming.AfterUserMessage,
 						CancelReply = true,
 						Arguments =
@@ -45,28 +65,18 @@ public class OpenWeatherChatAugmentationsServiceInstance(
 							new FunctionArgumentDefinition
 							{
 								Name = "get_weather_location",
-								Description = "The location for which the weather data will be retrieved",
-								Required = true,
+								Description = "The location for which the weather data will be retrieved. If the user did not mention a specific location, leave it empty.",
+								Required = false,
 								Type = FunctionArgumentType.String,
 							}
 						],
-					},
-					new()
-					{
-						Name = "get_weather_mylocation",
-						Layer = "Weather",
-						ShortDescription = "get the latest weather, temperature or rain data for user's current location",
-						Description = "When {{ user }} asks for the weather, temperature or rain data in his current location.",
-						MatchFilter =  [@"\b(?:weather|temperature|temperatures|rain|raining|rains|snow|snowing|snows)\b"],
-						Timing = FunctionTiming.AfterUserMessage,
-						CancelReply = true,
 					},
 					new ()
 					{
 						Name = "get_weather_forecast",
 						Layer = "Weather",
-						ShortDescription = "Get the weather forecast for a specific location and timeframe",
-						Description = "When {{ user }} asks for the weather forecast in a specific location for a certain period of time.",
+						ShortDescription = "Get the weather forecast and timeframe",
+						Description = "When {{ user }} asks for the weather forecast for a certain period of time.",
 						MatchFilter = [@"\b(?:forecast|next|tomorrow|weekend|days|hours)\b"],
 						Timing = FunctionTiming.AfterUserMessage,
 						CancelReply = true,
@@ -75,8 +85,8 @@ public class OpenWeatherChatAugmentationsServiceInstance(
 							new FunctionArgumentDefinition
 							{
 								Name = "forecast_location",
-								Description = "The location for which the forecast will be retrieved",
-								Required = true,
+								Description = "The location for which the forecast will be retrieved. If the user did not mention a specific location, leave it empty.",
+								Required = false,
 								Type = FunctionArgumentType.String,
 							},
 							/*new FunctionArgumentDefinition
@@ -87,7 +97,47 @@ public class OpenWeatherChatAugmentationsServiceInstance(
 								Type = FunctionArgumentType.String,
 							}*/
 						],
-					}
+					},
+					new()
+					{
+						Name = "get_air_pollution",
+						Layer = "Weather",
+						ShortDescription = "Get the current air pollution data",
+						Description = "When {{ user }} asks for the current air quality or pollution.",
+						MatchFilter = [@"\b(?:air\s?quality|pollution|AQI|air\s?pollution)\b(?![^.]*\b(?:forecast|next|tomorrow|weekend|days?|hours?)\b)"],
+						Timing = FunctionTiming.AfterUserMessage,
+						CancelReply = true,
+						Arguments =
+						[
+							new FunctionArgumentDefinition
+							{
+								Name = "get_air_pollution_location",
+								Description = "The location for which the air pollution data will be retrieved. If the user did not mention a specific location, leave it empty.",
+								Required = false,
+								Type = FunctionArgumentType.String,
+							}
+						],
+					},
+					new()
+					{
+						Name = "get_air_pollution_forecast",
+						Layer = "Weather",
+						ShortDescription = "Get the air pollution forecast",
+						Description = "When {{ user }} asks for the air quality or pollution forecast.",
+						MatchFilter = [@"\b(?:air\s?quality\s?forecast|pollution\s?forecast|AQI\s?forecast)\b"],
+						Timing = FunctionTiming.AfterUserMessage,
+						CancelReply = true,
+						Arguments =
+						[
+							new FunctionArgumentDefinition
+							{
+								Name = "air_pollution_forecast_location",
+								Description = "The location for which the air pollution forecast will be retrieved. If the user did not mention a specific location, leave it empty.",
+								Required = false,
+								Type = FunctionArgumentType.String,
+							}
+						],
+					},
 				]
             }
         ];
@@ -106,32 +156,45 @@ public class OpenWeatherChatAugmentationsServiceInstance(
         
         switch (serverActionMessage.Value)
         {
+	        /*case "get_weather_mylocation":
+		        await GetWeatherMyLocation(cancellationToken);
+		        return true;*/
             case "get_weather":
-	            var location = serverActionMessage.TryGetArgument("get_weather_location", out var locationArg) ? locationArg : null;
-	            if (string.IsNullOrEmpty(location))
-		            throw new ArgumentException("Location argument is missing for get_weather action");
+	            var location = serverActionMessage.TryGetArgument("get_weather_location", out var locationArg) ? locationArg : chatAugmentationSettings.MyLocation;
+	            /*if (string.IsNullOrEmpty(location))
+		            throw new ArgumentException("Location argument is missing for get_weather action");*/
 	            await GetWeather(location, cancellationToken);
                 return true;
-            case "get_weather_mylocation":
-	            await GetWeatherMyLocation(cancellationToken);
-	            return true;
             case "get_weather_forecast":
-	            var forecastLocation = serverActionMessage.TryGetArgument("forecast_location", out var forecastLocationArg) ? forecastLocationArg : null;
-	            if (string.IsNullOrEmpty(forecastLocation))
-		            throw new ArgumentException("Location argument is missing for get_weather action");
+	            var forecastLocation = serverActionMessage.TryGetArgument("forecast_location", out var forecastLocationArg) ? forecastLocationArg : chatAugmentationSettings.MyLocation;
+	            /*if (string.IsNullOrEmpty(forecastLocation))
+		            throw new ArgumentException("Location argument is missing for get_weather action");*/
 	            await GetWeatherForecast(forecastLocation, cancellationToken);
 	            return true;
+            case "get_air_pollution":
+	            var pollutionLocation = serverActionMessage.TryGetArgument("get_air_pollution_location", out var pollutionLocationArg) ? pollutionLocationArg : chatAugmentationSettings.MyLocation;
+	            /*if (string.IsNullOrEmpty(pollutionLocation))
+		            throw new ArgumentException("Location argument is missing for get_air_pollution action");*/
+	            await GetAirPollution(pollutionLocation, cancellationToken);
+	            return true;
+            case "get_air_pollution_forecast":
+	            var pollutionForecastLocation = serverActionMessage.TryGetArgument("air_pollution_forecast_location", out var pollutionForecastLocationArg) ? pollutionForecastLocationArg : chatAugmentationSettings.MyLocation;
+	            /*if (string.IsNullOrEmpty(pollutionForecastLocation))
+		            throw new ArgumentException("Location argument is missing for get_air_pollution_forecast action");*/
+	            await GetAirPollutionForecast(pollutionForecastLocation, cancellationToken);
+	            return true;
+
             default:
                 return false;
         }
     }
 
-    private async ValueTask GetWeatherMyLocation(CancellationToken cancellationToken)
+    /*private async ValueTask GetWeatherMyLocation(CancellationToken cancellationToken)
     {
 	    logger.LogInformation("Action called for my location");
 
 	    await GetWeather(chatAugmentationSettings.MyLocation, cancellationToken);
-    }
+    }*/
 
     private async ValueTask GetWeather(string? location, CancellationToken cancellationToken)
     {
@@ -160,7 +223,7 @@ public class OpenWeatherChatAugmentationsServiceInstance(
 	    
 	    var forecast = await client.FetchForecastData(forecastLocation, chatAugmentationSettings.Units, cancellationToken);
 	    var unitSuffix = chatAugmentationSettings.Units == "imperial" ? "°F" : "°C";
-	    var summaryText = ForecastSummariser.Summarise(forecast.List, days: 5, unitSuffix);
+	    var summaryText = WeatherForecastSummariser.Summarise(forecast.List, days: 5, unitSuffix);
 	    var introText = $"Weather forecast for {forecastLocation} ({forecast.City.Country}):";
 	    var messageText = $"{introText}\n{summaryText}";
 	    
@@ -199,6 +262,80 @@ public class OpenWeatherChatAugmentationsServiceInstance(
 			await session.SendSecretAsync($"Failed to fetch weather data: {exc.Message}", cancellationToken);
 			await session.TriggerReplyAsync(cancellationToken);
 		}
+	}
+	
+	private async ValueTask GetAirPollution(string? location, CancellationToken cancellationToken)
+	{
+		logger.LogInformation("Air pollution requested for {Location}", location);
+		if (string.IsNullOrWhiteSpace(location))
+		{
+			await session.SendSecretAsync("No air pollution data available as the location is not set.", cancellationToken);
+			await session.TriggerReplyAsync(cancellationToken);
+			return;
+		}
+
+		try
+		{
+			var pollutionData = await client.FetchAirPollutionData(location, cancellationToken);
+			var aqi = pollutionData.List[0].Main.Aqi;
+			var components = pollutionData.List[0].Components;
+
+			bool expertMode = chatAugmentationSettings.ExpertMode;
+
+			string messageText;
+			if (expertMode)
+			{
+				messageText = $"Current air quality in {location}: AQI {aqi} ({AirPollutionForecastSummariser.GetAqiLabel(aqi)})\n" +
+				              $"CO: {components.Co} µg/m³, NO: {components.No} µg/m³, NO₂: {components.No2} µg/m³, " +
+				              $"O₃: {components.O3} µg/m³, SO₂: {components.So2} µg/m³, PM2.5: {components.Pm2_5} µg/m³, " +
+				              $"PM10: {components.Pm10} µg/m³, NH₃: {components.Nh3} µg/m³";
+			}
+			else
+			{
+				messageText = $"Current air quality in {location}: AQI {aqi} ({AirPollutionForecastSummariser.GetAqiLabel(aqi)})\n" +
+				              $"PM2.5: {components.Pm2_5} µg/m³, PM10: {components.Pm10} µg/m³, " +
+				              $"NO₂: {components.No2} µg/m³, O₃: {components.O3} µg/m³";
+			}
+
+			await session.SendSecretAsync(messageText, cancellationToken);
+			await session.TriggerReplyAsync(cancellationToken);
+		}
+		catch (Exception exc)
+		{
+			logger.LogError(exc, "Failed to fetch air pollution data");
+			await session.SendSecretAsync($"Failed to fetch air pollution data: {exc.Message}", cancellationToken);
+			await session.TriggerReplyAsync(cancellationToken);
+		}
+	}
+
+
+	private async ValueTask GetAirPollutionForecast(string? location, CancellationToken cancellationToken)
+	{
+	    logger.LogInformation("Air pollution forecast requested for {Location}", location);
+	    if (string.IsNullOrWhiteSpace(location))
+	    {
+	        await session.SendSecretAsync("No air pollution forecast available as the location is not set.", cancellationToken);
+	        await session.TriggerReplyAsync(cancellationToken);
+	        return;
+	    }
+
+	    try
+	    {
+	        var forecastData = await client.FetchAirPollutionForecastData(location, cancellationToken);
+	        bool expertMode = chatAugmentationSettings.ExpertMode;
+	        var summaryText = AirPollutionForecastSummariser.Summarise(forecastData.List, days: 5, expertMode);
+	        var introText = $"Air pollution forecast for {location}:";
+	        var messageText = $"{introText}\n{summaryText}";
+
+	        await session.SendSecretAsync(messageText, cancellationToken);
+	        await session.TriggerReplyAsync(cancellationToken);
+	    }
+	    catch (Exception exc)
+	    {
+	        logger.LogError(exc, "Failed to fetch air pollution forecast data");
+	        await session.SendSecretAsync($"Failed to fetch air pollution forecast data: {exc.Message}", cancellationToken);
+	        await session.TriggerReplyAsync(cancellationToken);
+	    }
 	}
 	
 	private static string CleanLocationString(string input)

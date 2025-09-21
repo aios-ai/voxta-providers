@@ -27,8 +27,9 @@ public interface IOpenWeatherClient
 {
     Task<OpenWeatherResponse> FetchWeatherData(string location, string? units, CancellationToken cancellationToken);
     Task<OpenWeatherForecastResponse> FetchForecastData(string location, string? units, CancellationToken cancellationToken);
+    Task<OpenWeatherAirPollutionResponse> FetchAirPollutionData(string location, CancellationToken cancellationToken);
+    Task<OpenWeatherAirPollutionResponse> FetchAirPollutionForecastData(string location, CancellationToken cancellationToken);
 }
-
 
 public class OpenWeatherClient(
     HttpClient httpClient,
@@ -39,9 +40,7 @@ public class OpenWeatherClient(
     public async Task<OpenWeatherResponse> FetchWeatherData(string location, string? units, CancellationToken cancellationToken)
     {
         logger.LogInformation("Resolving location '{Location}'...", location);
-
         var geo = await ResolveLocationAsync(location, cancellationToken);
-
         logger.LogInformation("Fetching weather for {Name}, {Country} ({Lat}, {Lon})", geo.Name, geo.Country, geo.Lat, geo.Lon);
 
         // https://openweathermap.org/current#geo
@@ -61,11 +60,10 @@ public class OpenWeatherClient(
     public async Task<OpenWeatherForecastResponse> FetchForecastData(string location, string? units, CancellationToken cancellationToken)
     {
         logger.LogInformation("Resolving location '{Location}' for forecast...", location);
-
         var geo = await ResolveLocationAsync(location, cancellationToken);
-
         logger.LogInformation("Fetching forecast for {Name}, {Country} ({Lat}, {Lon})", geo.Name, geo.Country, geo.Lat, geo.Lon);
 
+        // https://openweathermap.org/forecast5
         var forecastUrl = $"http://api.openweathermap.org/data/2.5/forecast?lat={geo.Lat}&lon={geo.Lon}&appid={apiKey}&units={units}";
         var response = await httpClient.GetAsync(forecastUrl, cancellationToken);
 
@@ -78,7 +76,37 @@ public class OpenWeatherClient(
         var content = await response.Content.ReadFromJsonAsync<OpenWeatherForecastResponse>(cancellationToken);
         return content ?? throw new InvalidOperationException("Failed to parse forecast data from response.");
     }
+    
+    public async Task<OpenWeatherAirPollutionResponse> FetchAirPollutionData(string location, CancellationToken cancellationToken)
+    {
+        var geo = await ResolveLocationAsync(location, cancellationToken);
+        
+        // https://openweathermap.org/api/air-pollution#current
+        var url = $"http://api.openweathermap.org/data/2.5/air_pollution?lat={geo.Lat}&lon={geo.Lon}&appid={apiKey}";
+        var response = await httpClient.GetAsync(url, cancellationToken);
 
+        if (!response.IsSuccessStatusCode)
+            throw new HttpRequestException($"Failed to fetch air pollution data: {response.StatusCode}");
+
+        var content = await response.Content.ReadFromJsonAsync<OpenWeatherAirPollutionResponse>(cancellationToken);
+        return content ?? throw new InvalidOperationException("Failed to parse air pollution data.");
+    }
+
+    public async Task<OpenWeatherAirPollutionResponse> FetchAirPollutionForecastData(string location, CancellationToken cancellationToken)
+    {
+        var geo = await ResolveLocationAsync(location, cancellationToken);
+        
+        // https://openweathermap.org/api/air-pollution#forecast
+        var url = $"http://api.openweathermap.org/data/2.5/air_pollution/forecast?lat={geo.Lat}&lon={geo.Lon}&appid={apiKey}";
+        var response = await httpClient.GetAsync(url, cancellationToken);
+
+        if (!response.IsSuccessStatusCode)
+            throw new HttpRequestException($"Failed to fetch air pollution forecast data: {response.StatusCode}");
+
+        var content = await response.Content.ReadFromJsonAsync<OpenWeatherAirPollutionResponse>(cancellationToken);
+        return content ?? throw new InvalidOperationException("Failed to parse air pollution forecast data.");
+    }
+    
 
     public async Task<GeoResult> ResolveLocationAsync(string location, CancellationToken cancellationToken)
     {
@@ -88,7 +116,7 @@ public class OpenWeatherClient(
 
         if (parts.Length > 1)
         {
-            var possibleCountry = parts[^1]; // last token
+            var possibleCountry = parts[^1];
             if (CountryCodeMap.TryGetAlpha2(possibleCountry, out var code))
             {
                 countryCode = code;
