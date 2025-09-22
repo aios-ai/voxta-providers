@@ -36,9 +36,19 @@ public class ModuleConfigurationProvider : ModuleConfigurationProviderBase, IMod
         DefaultValue = "imperial",
     };
     
-    public static readonly FormBooleanField ExpertMode = new()
+    public static readonly FormBooleanField WeatherExpertMode = new()
     {
-        Name = "ExpertMode",
+        Name = "WeatherExpertMode",
+        Label = "Show full weather details",
+        DefaultValue = false,
+        Text = "When enabled, the AI will display all available weather details (feels-like temperature, wind speed/direction, cloud cover, visibility, precipitation probability, etc.). " +
+               "When disabled, only the basic forecast (condition, min/max temperature, precipitation) will be shown.",
+    };
+
+    
+    public static readonly FormBooleanField PollutionExpertMode = new()
+    {
+        Name = "PollutionExpertMode",
         Label = "Show full air pollution details",
         DefaultValue = false,
         Text = "When enabled, the AI will display all available pollutant concentrations (CO, NO, NO₂, O₃, SO₂, PM2.5, PM10, NH₃) in air quality reports. " +
@@ -64,7 +74,8 @@ public class ModuleConfigurationProvider : ModuleConfigurationProviderBase, IMod
            ApiKey,
            MyLocation,
            Units,
-           ExpertMode
+           WeatherExpertMode,
+           PollutionExpertMode
        );
         return Task.FromResult(fields);
     }

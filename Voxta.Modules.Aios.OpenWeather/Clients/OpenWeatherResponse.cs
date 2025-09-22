@@ -10,6 +10,15 @@ public class OpenWeatherResponse
 
     [JsonPropertyName("weather")]
     public required List<WeatherDetail> Weather { get; init; }
+    
+    [JsonPropertyName("clouds")]
+    public required Clouds Clouds { get; init; }
+
+    [JsonPropertyName("wind")]
+    public required Wind Wind { get; init; }
+
+    [JsonPropertyName("visibility")]
+    public int? Visibility { get; init; }
 
     [JsonPropertyName("sys")]
     public required SysInfo Sys { get; init; }
@@ -39,7 +48,7 @@ public class GeoResult
     [JsonPropertyName("country")]
     public required string Country { get; init; }
 
-    // Optional, only present for some countries
+    // Optional, only present for US
     [JsonPropertyName("state")]
     public string? State { get; init; }
 }

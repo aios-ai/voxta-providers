@@ -1,10 +1,10 @@
+using System.Globalization;
 using System.Text;
 using Voxta.Modules.Aios.OpenWeather.Clients;
 
-
 public static class AirPollutionForecastSummariser
 {
-    public static string Summarise(List<AirPollutionData> forecastItems, int days = 5, bool expertMode = false)
+    public static string Summarise(List<AirPollutionData> forecastItems, CultureInfo culture, int days = 5, bool expertMode = false)
     {
         if (forecastItems == null || forecastItems.Count == 0)
             return "No air pollution forecast data available.";
@@ -37,16 +37,16 @@ public static class AirPollutionForecastSummariser
                 .ToList();
 
             if (dayBlock.Any())
-                sb.AppendLine(BuildBlockSummary(date, "Day", dayBlock, expertMode));
+                sb.AppendLine(BuildBlockSummary(date, "Day", dayBlock, expertMode, culture));
 
             if (nightBlock.Any())
-                sb.AppendLine(BuildBlockSummary(date, "Night", nightBlock, expertMode));
+                sb.AppendLine(BuildBlockSummary(date, "Night", nightBlock, expertMode, culture));
         }
 
         return sb.ToString().Trim();
     }
 
-    private static string BuildBlockSummary(DateTime date, string label, List<AirPollutionData> block, bool expertMode)
+    private static string BuildBlockSummary(DateTime date, string label, List<AirPollutionData> block, bool expertMode, CultureInfo culture)
     {
         var avgAqi = (int)Math.Round(block.Average(x => x.Main.Aqi));
         var aqiLabel = GetAqiLabel(avgAqi);
@@ -64,7 +64,7 @@ public static class AirPollutionForecastSummariser
         };
 
         var sb = new StringBuilder();
-        sb.Append($"{date:dddd} {label}: AQI {avgAqi} ({aqiLabel})");
+        sb.Append($"{date.ToString("dddd", culture)} {label}: AQI {avgAqi} ({aqiLabel})");
 
         if (expertMode)
         {
