@@ -54,9 +54,10 @@ public class SpotifyChatAugmentationsService(
             ClientId = ModuleConfiguration.GetRequired(ModuleConfigurationProvider.ClientId),
             ClientSecret = localEncryptionProvider.Decrypt(ModuleConfiguration.GetRequired(ModuleConfigurationProvider.ClientSecret)),
             RedirectUri = new Uri(ModuleConfiguration.GetRequired(ModuleConfigurationProvider.RedirectUri)),
-            TokenPath = Path.GetFullPath(ModuleConfiguration.GetRequired(ModuleConfigurationProvider.TokenPath)),
+            TokenPath = Path.GetFullPath(Environment.ExpandEnvironmentVariables(ModuleConfiguration.GetRequired(ModuleConfigurationProvider.TokenPath))),
         };
-        var spotifyManager = await spotifyManagerFactory.CreateSpotifyManager(spotifyManagerConfig, cancellationToken);
+        var sessionWrapper = new SpotifyUserInteractionWrapper(session);
+        var spotifyManager = await spotifyManagerFactory.CreateSpotifyManager(sessionWrapper, spotifyManagerConfig, cancellationToken);
 
         var spotifySearchService = new SpotifySearchService(spotifyManager, loggerFactory.CreateLogger<SpotifySearchService>());
         await spotifySearchService.InitializeAsync();

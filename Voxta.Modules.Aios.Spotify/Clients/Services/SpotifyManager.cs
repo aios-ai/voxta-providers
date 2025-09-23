@@ -1,9 +1,28 @@
 using System.Text.Json;
 using Microsoft.Extensions.Logging;
 using SpotifyAPI.Web;
+using Voxta.Abstractions.Chats.Sessions;
+using Voxta.Abstractions.Utils;
 using Voxta.Modules.Aios.Spotify.Clients.Models;
 
 namespace Voxta.Modules.Aios.Spotify.Clients.Services;
+
+public interface ISpotifyUserInteractionWrapper
+{
+    Task<IUserInteractionRequestToken> RequestUserInteraction(Uri url, CancellationToken cancellationToken);
+}
+
+public class SpotifyUserInteractionWrapper(IChatSessionChatAugmentationApi session) : ISpotifyUserInteractionWrapper
+{
+    public Task<IUserInteractionRequestToken> RequestUserInteraction(Uri url, CancellationToken cancellationToken)
+    {
+        return session.RequestUserAction(new UserInteractionRequestInput
+        {
+            Message = "Please authorize the Spotify integration by visiting the following URL in your browser:",
+            Url = url.ToString(),
+        }, cancellationToken);
+    }
+}
 
 public class SpotifyManagerConfig
 {
@@ -15,7 +34,7 @@ public class SpotifyManagerConfig
 
 public interface ISpotifyManagerFactory
 {
-    Task<ISpotifyManager> CreateSpotifyManager(SpotifyManagerConfig config, CancellationToken cancellationToken);
+    Task<ISpotifyManager> CreateSpotifyManager(ISpotifyUserInteractionWrapper userInteractionWrapper, SpotifyManagerConfig config, CancellationToken cancellationToken);
 }
     
 public class SpotifyManagerFactory(
@@ -23,14 +42,14 @@ public class SpotifyManagerFactory(
     ILoggerFactory loggerFactory
 ) : ISpotifyManagerFactory
 {
-    public async Task<ISpotifyManager> CreateSpotifyManager(SpotifyManagerConfig config, CancellationToken cancellationToken)
+    public async Task<ISpotifyManager> CreateSpotifyManager(ISpotifyUserInteractionWrapper userInteractionWrapper, SpotifyManagerConfig config, CancellationToken cancellationToken)
     {
         var tokenFolder = Path.GetDirectoryName(Path.GetFullPath(config.TokenPath)) ?? throw new InvalidOperationException("Token path is invalid");
         if (!Directory.Exists(tokenFolder))
             Directory.CreateDirectory(tokenFolder);
 
         var logger = loggerFactory.CreateLogger<SpotifyManager>();
-        var spotifyManager = new SpotifyManager(spotifyAuthCallbackManager, config, logger);
+        var spotifyManager = new SpotifyManager(spotifyAuthCallbackManager, userInteractionWrapper, config, logger);
         await spotifyManager.InitializeSpotifyClient(cancellationToken);
             
         if (!spotifyManager.HasClient)
@@ -67,6 +86,7 @@ public interface ISpotifyManager
     
 public class SpotifyManager(
     ISpotifyAuthCallbackManager spotifyAuthCallbackManager,
+    ISpotifyUserInteractionWrapper userInteractionWrapper,
     SpotifyManagerConfig config,
     ILogger<SpotifyManager> logger) : ISpotifyManager
 {
@@ -166,10 +186,15 @@ public class SpotifyManager(
     private async Task<string> GetAuthCodeAsync(Uri authUri, CancellationToken cancellationToken)
     {
         var codeTask = spotifyAuthCallbackManager.WaitForCodeAsync(cancellationToken);
+        await using var userInteractionToken = await userInteractionWrapper.RequestUserInteraction(authUri, cancellationToken);
         
-        logger.LogInformation("Please authorize your app by visiting: {AuthUri}", authUri);
         logger.LogInformation("Waiting for Spotify authentication...");
 
+        await Task.WhenAny(userInteractionToken.Task, codeTask);
+        
+        if(!codeTask.IsCompleted)
+            throw new OperationCanceledException("User interaction was cancelled or timed out.");
+        
         var code = await codeTask;
         
         logger.LogInformation("Authorization code received!");
