@@ -38,7 +38,17 @@ public class SpotifyChatAugmentationsService(
             MatchFilterWakeWord = ModuleConfiguration.GetOptional(ModuleConfigurationProvider.MatchFilterWakeWord),
             EnableMatchFilter = ModuleConfiguration.GetRequired(ModuleConfigurationProvider.EnableMatchFilter),
             EnableCharacterReplies = ModuleConfiguration.GetRequired(ModuleConfigurationProvider.EnableCharacterReplies),
+
+            ReleaseRadarPlaylistId = ModuleConfiguration.GetOptional(ModuleConfigurationProvider.ReleaseRadarPlaylistId),
+            DiscoverWeeklyPlaylistId = ModuleConfiguration.GetOptional(ModuleConfigurationProvider.DiscoverWeeklyPlaylistId),
+            DailyMix1PlaylistId = ModuleConfiguration.GetOptional(ModuleConfigurationProvider.DailyMix1PlaylistId),
+            DailyMix2PlaylistId = ModuleConfiguration.GetOptional(ModuleConfigurationProvider.DailyMix2PlaylistId),
+            DailyMix3PlaylistId = ModuleConfiguration.GetOptional(ModuleConfigurationProvider.DailyMix3PlaylistId),
+            DailyMix4PlaylistId = ModuleConfiguration.GetOptional(ModuleConfigurationProvider.DailyMix4PlaylistId),
+            DailyMix5PlaylistId = ModuleConfiguration.GetOptional(ModuleConfigurationProvider.DailyMix5PlaylistId),
+            DailyMix6PlaylistId = ModuleConfiguration.GetOptional(ModuleConfigurationProvider.DailyMix6PlaylistId)
         };
+
         var spotifyManagerConfig = new SpotifyManagerConfig
         {
             ClientId = ModuleConfiguration.GetRequired(ModuleConfigurationProvider.ClientId),
@@ -53,8 +63,8 @@ public class SpotifyChatAugmentationsService(
 
         var spotifyPlaybackMonitor = new SpotifyPlaybackMonitor(spotifyManager, session, loggerFactory.CreateLogger<SpotifyPlaybackMonitor>(), config.EnableCharacterReplies);
         
-        var spotifyActionHandler = new SpotifyActionHandler(spotifyManager, spotifySearchService, session, loggerFactory.CreateLogger<SpotifyActionHandler>(), () => spotifyPlaybackMonitor.PlaybackState, config.EnableCharacterReplies);
-
+        var spotifyActionHandler = new SpotifyActionHandler(spotifyManager, spotifySearchService, session, config, loggerFactory.CreateLogger<SpotifyActionHandler>(), () => spotifyPlaybackMonitor.PlaybackState, config.EnableCharacterReplies);
+        
         var instance = new SpotifyChatAugmentationsServiceInstance(
             session,
             config,

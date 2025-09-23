@@ -42,15 +42,6 @@ public static class StringUtils
     // Map of canonical name -> Spotify playlist ID (user-specific for algorithmic ones)
     public static readonly Dictionary<string, string> SpecialPlaylistMap = new(StringComparer.OrdinalIgnoreCase)
     {
-        { "release radar", "" },
-        { "discover weekly", "" },
-        { "daily mix 1", "" },
-        { "daily mix 2", "" },
-        { "daily mix 3", "" },
-        { "daily mix 4", "" },
-        { "daily mix 5", "" },
-        { "daily mix 6", "" },
-
         // "Made For You" artist/genre mixes (user-specific) -> needs to be tested
         { "stations", "PASTE_ID_HERE" },
     };

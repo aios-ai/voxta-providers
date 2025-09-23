@@ -2,6 +2,7 @@ using Microsoft.Extensions.Logging;
 using SpotifyAPI.Web;
 using Voxta.Abstractions.Chats.Sessions;
 using Voxta.Model.WebsocketMessages.ServerMessages;
+using Voxta.Modules.Aios.Spotify.ChatAugmentations;
 using Voxta.Modules.Aios.Spotify.Clients.Services;
 using Voxta.Modules.Aios.Spotify.Helpers;
 
@@ -11,6 +12,7 @@ public class SpotifyActionHandler(
     ISpotifyManager spotifyManager,
     SpotifySearchService searchService,
     IChatSessionChatAugmentationApi session,
+    SpotifyChatAugmentationSettings settings,
     ILogger<SpotifyActionHandler> logger,
     Func<CurrentlyPlayingContext?> getPlaybackState,
     bool enableCharacterReplies = true)
@@ -123,8 +125,20 @@ public class SpotifyActionHandler(
         }
 
         var canonicalName = StringUtils.NormaliseSpecialName(playlistName);
+        string? playlistId = canonicalName switch
+        {
+            "release radar" => settings.ReleaseRadarPlaylistId,
+            "discover weekly" => settings.DiscoverWeeklyPlaylistId,
+            "daily mix 1" => settings.DailyMix1PlaylistId,
+            "daily mix 2" => settings.DailyMix2PlaylistId,
+            "daily mix 3" => settings.DailyMix3PlaylistId,
+            "daily mix 4" => settings.DailyMix4PlaylistId,
+            "daily mix 5" => settings.DailyMix5PlaylistId,
+            "daily mix 6" => settings.DailyMix6PlaylistId,
+            _ => StringUtils.SpecialPlaylistMap.TryGetValue(canonicalName, out var id) ? id : null
+        };
 
-        if (StringUtils.SpecialPlaylistMap.TryGetValue(canonicalName, out var playlistId) && !string.IsNullOrWhiteSpace(playlistId))
+        if (!string.IsNullOrWhiteSpace(playlistId))
         {
             var uri = $"spotify:playlist:{playlistId}";
             await spotifyManager.PlaySpecificUri(uri, cancellationToken, "playlist");
@@ -134,6 +148,7 @@ public class SpotifyActionHandler(
 
         await SendWithPrefix($"No stored ID for '{canonicalName}'. Please paste the playlist ID so I can save it.", cancellationToken);
     }
+
 
     private async Task HandlePlayMusic(ServerActionMessage message, CancellationToken cancellationToken)
     {
