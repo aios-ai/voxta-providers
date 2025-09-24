@@ -49,12 +49,15 @@ public class SpotifyChatAugmentationsService(
             DailyMix6PlaylistId = ModuleConfiguration.GetOptional(ModuleConfigurationProvider.DailyMix6PlaylistId)
         };
 
+        var tokenPath = Path.GetFullPath(Environment.ExpandEnvironmentVariables(ModuleConfiguration.GetRequired(ModuleConfigurationProvider.TokenPath)));
+        if (!tokenPath.EndsWith(".json")) throw new InvalidOperationException("TokenPath must end with .json");
+        tokenPath = tokenPath[..^5] + $".{Auth.UserId}.json";
         var spotifyManagerConfig = new SpotifyManagerConfig
         {
             ClientId = ModuleConfiguration.GetRequired(ModuleConfigurationProvider.ClientId),
             ClientSecret = localEncryptionProvider.Decrypt(ModuleConfiguration.GetRequired(ModuleConfigurationProvider.ClientSecret)),
             RedirectUri = new Uri(ModuleConfiguration.GetRequired(ModuleConfigurationProvider.RedirectUri)),
-            TokenPath = Path.GetFullPath(Environment.ExpandEnvironmentVariables(ModuleConfiguration.GetRequired(ModuleConfigurationProvider.TokenPath))),
+            TokenPath = tokenPath,
         };
         var sessionWrapper = new SpotifyUserInteractionWrapper(session);
         var spotifyManager = await spotifyManagerFactory.CreateSpotifyManager(sessionWrapper, spotifyManagerConfig, cancellationToken);
