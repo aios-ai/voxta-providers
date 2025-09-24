@@ -10,7 +10,7 @@
     <ItemGroup>
         <PackageReference Include="HueApi" Version="1.7.0" />
         <PackageReference Include="HueApi.ColorConverters" Version="1.7.1" />
-        <PackageReference Include="Voxta.Sdk.Modules" Version="1.0.0-beta.152" />
+        <PackageReference Include="Voxta.Sdk.Modules" Version="1.0.0-beta.152.2" />
     </ItemGroup>
 
     <Target Name="CopyToVoxtaModulesPath" AfterTargets="Build">

@@ -1,9 +1,11 @@
 using Microsoft.Extensions.Logging;
+using Voxta.Abstractions.Connections;
 using Voxta.Abstractions.Encryption;
 using Voxta.Abstractions.Modules;
 using Voxta.Abstractions.Registration;
 using Voxta.Abstractions.Security;
 using Voxta.Abstractions.Utils;
+using Voxta.Model.WebsocketMessages.ServerMessages;
 using Voxta.Modules.Aios.Spotify.Clients.Services;
 using Voxta.Modules.Aios.Spotify.Configuration;
 
@@ -13,6 +15,7 @@ public class ModuleTestingProvider(
     ILocalEncryptionProvider localEncryptionProvider,
     ISpotifyManagerFactory spotifyManagerFactory,
     IUserInteractionRequestsManager userInteractionRequestsManager,
+    IIVoxtaWebsocketBroadcasterFactory broadcastFactory,
     ILogger<ModuleTestingProvider> logger
     ) : IVoxtaModuleTestingProvider
 {
@@ -31,7 +34,8 @@ public class ModuleTestingProvider(
             TokenPath = Path.GetFullPath(Environment.ExpandEnvironmentVariables(settings.GetRequired(ModuleConfigurationProvider.TokenPath))),
         };
         // TODO: There is no way currently to get a tunnel here
-        var session = new TestUserInteractionWrapper(userInteractionRequestsManager, logger, cancellationToken);
+        var ws = broadcastFactory.Create(auth.UserId);
+        var session = new TestUserInteractionWrapper(userInteractionRequestsManager, ws, moduleId, logger, cancellationToken);
         var client = await spotifyManagerFactory.CreateSpotifyManager(session, config, cancellationToken);
         try
         {
@@ -63,17 +67,23 @@ public class ModuleTestingProvider(
 
 public class TestUserInteractionWrapper(
     IUserInteractionRequestsManager userInteractionRequestsManager,
+    IVoxtaWebsocketBroadcaster ws,
+    Guid moduleId,
     ILogger logger,
-    CancellationToken abort
-    ) : ISpotifyUserInteractionWrapper
+    CancellationToken abort) : ISpotifyUserInteractionWrapper
 {
     public CancellationToken Abort => abort;
 
     public async Task<IUserInteractionRequestToken> RequestUserInteraction(Uri url, CancellationToken cancellationToken)
     {
         var request = await userInteractionRequestsManager.RequestUserInteractionAsync(cancellationToken);
-        // TODO: Ask the user using a proper popup
-        logger.LogCritical("Please authorize the application by visiting the following URL: {Url}", url);
+        ws.SendToUser(new ServerUserInteractionRequestMessage
+        {
+            RequestId = request.RequestId,
+            ModuleId = moduleId,
+            Message = "Please authorize Spotify by visiting the following URL:",
+            Url = url.ToString(),
+        });
         return request;
     }
 }

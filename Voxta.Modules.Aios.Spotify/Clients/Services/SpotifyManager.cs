@@ -191,13 +191,11 @@ public class SpotifyManager(
         try
         {
             var codeTask = spotifyAuthCallbackManager.WaitForCodeAsync(cancellationToken);
-            await using var userInteractionToken =
-                await userInteractionWrapper.RequestUserInteraction(authUri, cancellationToken);
+            await using var userInteractionToken = await userInteractionWrapper.RequestUserInteraction(authUri, cancellationToken);
 
             logger.LogInformation("Waiting for Spotify authentication...");
 
-            var abortTask = Task.Run(() => userInteractionWrapper.Abort.WaitHandle.WaitOne(), userInteractionWrapper.Abort);
-            await Task.WhenAny(userInteractionToken.Task, codeTask, abortTask);
+            await Task.WhenAny(userInteractionToken.Task, codeTask);
 
             if (!codeTask.IsCompleted)
                 throw new OperationCanceledException("User interaction was cancelled or timed out.");
