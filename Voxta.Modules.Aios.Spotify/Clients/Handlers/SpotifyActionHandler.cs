@@ -115,7 +115,7 @@ public class SpotifyActionHandler(
             await SendWithPrefix($"No top tracks found to play randomly.", cancellationToken);
         }
     }
-
+    
     private async Task HandlePlaySpecialPlaylist(ServerActionMessage message, CancellationToken cancellationToken)
     {
         if (!message.TryGetArgument("name", out var playlistName) || string.IsNullOrWhiteSpace(playlistName))
@@ -124,31 +124,28 @@ public class SpotifyActionHandler(
             return;
         }
 
-        var canonicalName = StringUtils.NormaliseSpecialName(playlistName);
-        string? playlistId = canonicalName switch
-        {
-            "release radar" => settings.ReleaseRadarPlaylistId,
-            "discover weekly" => settings.DiscoverWeeklyPlaylistId,
-            "daily mix 1" => settings.DailyMix1PlaylistId,
-            "daily mix 2" => settings.DailyMix2PlaylistId,
-            "daily mix 3" => settings.DailyMix3PlaylistId,
-            "daily mix 4" => settings.DailyMix4PlaylistId,
-            "daily mix 5" => settings.DailyMix5PlaylistId,
-            "daily mix 6" => settings.DailyMix6PlaylistId,
-            _ => StringUtils.SpecialPlaylistMap.TryGetValue(canonicalName, out var id) ? id : null
-        };
+        var key = StringUtils.NormaliseKey(playlistName);
 
-        if (!string.IsNullOrWhiteSpace(playlistId))
+        if (settings.SpecialPlaylists.TryGetValue(key, out var playlistId))
         {
             var uri = $"spotify:playlist:{playlistId}";
             await spotifyManager.PlaySpecificUri(uri, cancellationToken, "playlist");
-            await SendWithPrefix($"Playing your playlist: {canonicalName}", cancellationToken);
+            await SendWithPrefix($"Playing your playlist: {playlistName}", cancellationToken);
             return;
         }
-
-        await SendWithPrefix($"No stored ID for '{canonicalName}'. Please paste the playlist ID so I can save it.", cancellationToken);
+        
+        /*var bestMatch = StringUtils.FindBestMatch(playlistName, settings.SpecialPlaylists.Keys);
+        if (bestMatch != null && settings.SpecialPlaylists.TryGetValue(bestMatch, out playlistId) &&
+            !string.IsNullOrWhiteSpace(playlistId))
+        {
+            var uri = $"spotify:playlist:{playlistId}";
+            await spotifyManager.PlaySpecificUri(uri, cancellationToken, "playlist");
+            await SendWithPrefix($"Playing your playlist: {bestMatch}", cancellationToken);
+            return;
+        }*/
+        
+        await SendWithPrefix($"No stored ID for '{playlistName}'. Please add it in the configuration.", cancellationToken);
     }
-
 
     private async Task HandlePlayMusic(ServerActionMessage message, CancellationToken cancellationToken)
     {

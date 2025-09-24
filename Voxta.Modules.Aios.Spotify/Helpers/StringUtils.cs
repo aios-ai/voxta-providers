@@ -14,6 +14,11 @@ public static class StringUtils
 
         return input;
     }
+    
+    public static string NormaliseKey(string input)
+    {
+        return CleanString(input).ToLowerInvariant();
+    }
 
     public static string CleanFriendlyNameRegex(string friendlyName)
     {
@@ -38,14 +43,7 @@ public static class StringUtils
         var parts = uri.Split(':');
         return parts.Length > 0 ? parts[^1] : string.Empty;
     }
-
-    // Map of canonical name -> Spotify playlist ID (user-specific for algorithmic ones)
-    public static readonly Dictionary<string, string> SpecialPlaylistMap = new(StringComparer.OrdinalIgnoreCase)
-    {
-        // "Made For You" artist/genre mixes (user-specific) -> needs to be tested
-        { "stations", "PASTE_ID_HERE" },
-    };
-
+    
     public static string NormaliseSpecialName(string input)
     {
         input = input.Trim().ToLowerInvariant();
@@ -61,13 +59,56 @@ public static class StringUtils
             var match = Regex.Match(input, @"\d+");
             if (match.Success)
                 return $"daily mix {match.Value}";
-            else
-            {
-                var rnd = new Random();
-                return $"daily mix {rnd.Next(1, 7)}";
-            }
+            return "daily mix";
         }
 
         return input;
     }
+    
+    /*public static string? FindBestMatch(string input, IEnumerable<string> candidates)
+    {
+        string? best = null;
+        int bestDistance = int.MaxValue;
+
+        foreach (var candidate in candidates)
+        {
+            int distance = LevenshteinDistance(input, candidate);
+            if (distance < bestDistance)
+            {
+                bestDistance = distance;
+                best = candidate;
+            }
+        }
+        
+        return bestDistance <= 3 ? best : null;
+    }
+
+    private static int LevenshteinDistance(string s, string t)
+    {
+        if (string.IsNullOrEmpty(s))
+            return string.IsNullOrEmpty(t) ? 0 : t.Length;
+        if (string.IsNullOrEmpty(t))
+            return s.Length;
+
+        int n = s.Length;
+        int m = t.Length;
+        var d = new int[n + 1, m + 1];
+
+        for (int i = 0; i <= n; i++) d[i, 0] = i;
+        for (int j = 0; j <= m; j++) d[0, j] = j;
+
+        for (int i = 1; i <= n; i++)
+        {
+            for (int j = 1; j <= m; j++)
+            {
+                int cost = (t[j - 1] == s[i - 1]) ? 0 : 1;
+                d[i, j] = Math.Min(
+                    Math.Min(d[i - 1, j] + 1, d[i, j - 1] + 1),
+                    d[i - 1, j - 1] + cost
+                );
+            }
+        }
+
+        return d[n, m];
+    }*/
 }

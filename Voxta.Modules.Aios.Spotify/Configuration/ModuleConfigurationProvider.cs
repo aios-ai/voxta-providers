@@ -6,6 +6,10 @@ namespace Voxta.Modules.Aios.Spotify.Configuration;
 
 public class ModuleConfigurationProvider : ModuleConfigurationProviderBase, IModuleConfigurationProvider
 {
+    public ModuleConfigurationProvider()
+    {
+    }
+
     public static string[] FieldsRequiringReload => [ClientId.Name, ClientSecret.Name];
 
     public static readonly FormTextField ClientId = new()
@@ -58,76 +62,22 @@ public class ModuleConfigurationProvider : ModuleConfigurationProviderBase, IMod
         DefaultValue = false
     };
     
-    public static readonly FormTextField ReleaseRadarPlaylistId = new()
+    public static readonly FormMultilineField SpecialPlaylists = new()
     {
-        Name = "ReleaseRadarPlaylistId",
-        Label = "Release Radar Playlist ID",
+        Name = "SpecialPlaylists",
+        Label = "Special Spotify Playlists",
         Required = false,
-        Text = "Paste your Spotify Release Radar playlist ID here.",
-        DefaultValue = ""
-    };
-
-    public static readonly FormTextField DiscoverWeeklyPlaylistId = new()
-    {
-        Name = "DiscoverWeeklyPlaylistId",
-        Label = "Discover Weekly Playlist ID",
-        Required = false,
-        Text = "Paste your Spotify Discover Weekly playlist ID here.",
-        DefaultValue = ""
-    };
-
-    public static readonly FormTextField DailyMix1PlaylistId = new()
-    {
-        Name = "DailyMix1PlaylistId",
-        Label = "Daily Mix 1 Playlist ID",
-        Required = false,
-        Text = "Paste your Spotify Daily Mix 1 playlist ID here.",
-        DefaultValue = ""
-    };
-    
-    public static readonly FormTextField DailyMix2PlaylistId = new()
-    {
-        Name = "DailyMix2PlaylistId",
-        Label = "Daily Mix 2 Playlist ID",
-        Required = false,
-        Text = "Paste your Spotify Daily Mix 2 playlist ID here.",
-        DefaultValue = ""
-    };
-    
-    public static readonly FormTextField DailyMix3PlaylistId = new()
-    {
-        Name = "DailyMix3PlaylistId",
-        Label = "Daily Mix 3 Playlist ID",
-        Required = false,
-        Text = "Paste your Spotify Daily Mix 3 playlist ID here.",
-        DefaultValue = ""
-    };
-    
-    public static readonly FormTextField DailyMix4PlaylistId = new()
-    {
-        Name = "DailyMix4PlaylistId",
-        Label = "Daily Mix 4 Playlist ID",
-        Required = false,
-        Text = "Paste your Spotify Daily Mix 4 playlist ID here.",
-        DefaultValue = ""
-    };
-    
-    public static readonly FormTextField DailyMix5PlaylistId = new()
-    {
-        Name = "DailyMix5PlaylistId",
-        Label = "Daily Mix 5 Playlist ID",
-        Required = false,
-        Text = "Paste your Spotify Daily Mix 5 playlist ID here.",
-        DefaultValue = ""
-    };
-    
-    public static readonly FormTextField DailyMix6PlaylistId = new()
-    {
-        Name = "DailyMix6PlaylistId",
-        Label = "Daily Mix 6 Playlist ID",
-        Required = false,
-        Text = "Paste your Spotify Daily Mix 6 playlist ID here.",
-        DefaultValue = ""
+        Text = "You can map your algorithmic Spotify playlists here. Add one entry per line in the format: Name=PlaylistId (e.g. Release Radar=123abc).",
+        Rows = 8,
+        DefaultValue = 
+            @"Release Radar=
+Discover Weekly=
+Daily Mix 1=
+Daily Mix 2=
+Daily Mix 3=
+Daily Mix 4=
+Daily Mix 5=
+Daily Mix 6="
     };
     
     public static readonly FormTextField TokenPath = new()
@@ -153,14 +103,7 @@ public class ModuleConfigurationProvider : ModuleConfigurationProviderBase, IMod
             EnableMatchFilter,
             MatchFilterWakeWord,
             EnableCharacterReplies,
-            ReleaseRadarPlaylistId,
-            DiscoverWeeklyPlaylistId,
-            DailyMix1PlaylistId,
-            DailyMix2PlaylistId,
-            DailyMix3PlaylistId,
-            DailyMix4PlaylistId,
-            DailyMix5PlaylistId,
-            DailyMix6PlaylistId,
+            SpecialPlaylists,
             TokenPath
         );
         return Task.FromResult(fields);

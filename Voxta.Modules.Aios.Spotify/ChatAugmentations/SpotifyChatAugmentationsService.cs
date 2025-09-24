@@ -7,6 +7,7 @@ using Voxta.Abstractions.Services.ChatAugmentations;
 using Voxta.Modules.Aios.Spotify.Clients.Handlers;
 using Voxta.Modules.Aios.Spotify.Clients.Services;
 using Voxta.Modules.Aios.Spotify.Configuration;
+using Voxta.Modules.Aios.Spotify.Helpers;
 
 namespace Voxta.Modules.Aios.Spotify.ChatAugmentations;
 
@@ -33,20 +34,24 @@ public class SpotifyChatAugmentationsService(
             return null;
         var logger = loggerFactory.CreateLogger<SpotifyChatAugmentationsServiceInstance>();
         logger.LogInformation("Chat session {SessionId} has been augmented with {Augmentation}", session.SessionId, VoxtaModule.AugmentationKey);
+        
+        var rawPlaylists = ModuleConfiguration.GetOptional(ModuleConfigurationProvider.SpecialPlaylists) ?? "";
+        var playlistMap = rawPlaylists
+            .Split(new[] { '\r', '\n' }, StringSplitOptions.RemoveEmptyEntries)
+            .Select(line => line.Split('=', 2, StringSplitOptions.TrimEntries))
+            .Where(parts => parts.Length == 2 && !string.IsNullOrWhiteSpace(parts[1]))
+            .ToDictionary(
+                parts => StringUtils.NormaliseSpecialName(parts[0]),
+                parts => parts[1]
+            );
+        
         var config = new SpotifyChatAugmentationSettings
         {
             MatchFilterWakeWord = ModuleConfiguration.GetOptional(ModuleConfigurationProvider.MatchFilterWakeWord),
             EnableMatchFilter = ModuleConfiguration.GetRequired(ModuleConfigurationProvider.EnableMatchFilter),
             EnableCharacterReplies = ModuleConfiguration.GetRequired(ModuleConfigurationProvider.EnableCharacterReplies),
 
-            ReleaseRadarPlaylistId = ModuleConfiguration.GetOptional(ModuleConfigurationProvider.ReleaseRadarPlaylistId),
-            DiscoverWeeklyPlaylistId = ModuleConfiguration.GetOptional(ModuleConfigurationProvider.DiscoverWeeklyPlaylistId),
-            DailyMix1PlaylistId = ModuleConfiguration.GetOptional(ModuleConfigurationProvider.DailyMix1PlaylistId),
-            DailyMix2PlaylistId = ModuleConfiguration.GetOptional(ModuleConfigurationProvider.DailyMix2PlaylistId),
-            DailyMix3PlaylistId = ModuleConfiguration.GetOptional(ModuleConfigurationProvider.DailyMix3PlaylistId),
-            DailyMix4PlaylistId = ModuleConfiguration.GetOptional(ModuleConfigurationProvider.DailyMix4PlaylistId),
-            DailyMix5PlaylistId = ModuleConfiguration.GetOptional(ModuleConfigurationProvider.DailyMix5PlaylistId),
-            DailyMix6PlaylistId = ModuleConfiguration.GetOptional(ModuleConfigurationProvider.DailyMix6PlaylistId)
+            SpecialPlaylists = playlistMap
         };
 
         var tokenPath = Path.GetFullPath(Environment.ExpandEnvironmentVariables(ModuleConfiguration.GetRequired(ModuleConfigurationProvider.TokenPath)));
