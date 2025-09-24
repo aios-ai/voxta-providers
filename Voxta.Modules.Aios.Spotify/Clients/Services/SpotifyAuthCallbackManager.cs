@@ -4,6 +4,7 @@ public interface ISpotifyAuthCallbackManager
 {
     void Callback(string code);
     Task<string> WaitForCodeAsync(CancellationToken cancellationToken);
+    void Release();
 }
 
 public class SpotifyAuthCallbackManager : ISpotifyAuthCallbackManager
@@ -39,6 +40,16 @@ public class SpotifyAuthCallbackManager : ISpotifyAuthCallbackManager
             });
             _codeTcs = tcs;
             return tcs.Task;
+        }
+    }
+    
+    public void Release()
+    {
+        lock (_lock)
+        {
+            if(_codeTcs is { Task.IsCompleted: false })
+                _codeTcs.SetCanceled();
+            _codeTcs = null;
         }
     }
 }

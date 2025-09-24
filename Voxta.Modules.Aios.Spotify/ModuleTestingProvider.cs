@@ -31,7 +31,7 @@ public class ModuleTestingProvider(
             TokenPath = Path.GetFullPath(Environment.ExpandEnvironmentVariables(settings.GetRequired(ModuleConfigurationProvider.TokenPath))),
         };
         // TODO: There is no way currently to get a tunnel here
-        var session = new TestUserInteractionWrapper(userInteractionRequestsManager, logger);
+        var session = new TestUserInteractionWrapper(userInteractionRequestsManager, logger, cancellationToken);
         var client = await spotifyManagerFactory.CreateSpotifyManager(session, config, cancellationToken);
         try
         {
@@ -63,9 +63,12 @@ public class ModuleTestingProvider(
 
 public class TestUserInteractionWrapper(
     IUserInteractionRequestsManager userInteractionRequestsManager,
-    ILogger logger
+    ILogger logger,
+    CancellationToken abort
     ) : ISpotifyUserInteractionWrapper
 {
+    public CancellationToken Abort => abort;
+
     public async Task<IUserInteractionRequestToken> RequestUserInteraction(Uri url, CancellationToken cancellationToken)
     {
         var request = await userInteractionRequestsManager.RequestUserInteractionAsync(cancellationToken);

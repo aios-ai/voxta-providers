@@ -9,11 +9,14 @@ namespace Voxta.Modules.Aios.Spotify.Clients.Services;
 
 public interface ISpotifyUserInteractionWrapper
 {
+    CancellationToken Abort { get; }
     Task<IUserInteractionRequestToken> RequestUserInteraction(Uri url, CancellationToken cancellationToken);
 }
 
 public class SpotifyUserInteractionWrapper(IChatSessionChatAugmentationApi session) : ISpotifyUserInteractionWrapper
 {
+    public CancellationToken Abort => session.Chat.Abort;
+
     public Task<IUserInteractionRequestToken> RequestUserInteraction(Uri url, CancellationToken cancellationToken)
     {
         return session.RequestUserAction(new UserInteractionRequestInput
@@ -185,21 +188,30 @@ public class SpotifyManager(
 
     private async Task<string> GetAuthCodeAsync(Uri authUri, CancellationToken cancellationToken)
     {
-        var codeTask = spotifyAuthCallbackManager.WaitForCodeAsync(cancellationToken);
-        await using var userInteractionToken = await userInteractionWrapper.RequestUserInteraction(authUri, cancellationToken);
-        
-        logger.LogInformation("Waiting for Spotify authentication...");
+        try
+        {
+            var codeTask = spotifyAuthCallbackManager.WaitForCodeAsync(cancellationToken);
+            await using var userInteractionToken =
+                await userInteractionWrapper.RequestUserInteraction(authUri, cancellationToken);
 
-        await Task.WhenAny(userInteractionToken.Task, codeTask);
-        
-        if(!codeTask.IsCompleted)
-            throw new OperationCanceledException("User interaction was cancelled or timed out.");
-        
-        var code = await codeTask;
-        
-        logger.LogInformation("Authorization code received!");
-        
-        return code;
+            logger.LogInformation("Waiting for Spotify authentication...");
+
+            var abortTask = Task.Run(() => userInteractionWrapper.Abort.WaitHandle.WaitOne(), userInteractionWrapper.Abort);
+            await Task.WhenAny(userInteractionToken.Task, codeTask, abortTask);
+
+            if (!codeTask.IsCompleted)
+                throw new OperationCanceledException("User interaction was cancelled or timed out.");
+
+            var code = await codeTask;
+
+            logger.LogInformation("Authorization code received!");
+
+            return code;
+        }
+        finally
+        {
+            spotifyAuthCallbackManager.Release();
+        }
     }
 
     private bool IsTokenExpired(SpotifyAuthToken token)
