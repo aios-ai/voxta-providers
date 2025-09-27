@@ -6,10 +6,6 @@ namespace Voxta.Modules.Aios.Spotify.Configuration;
 
 public class ModuleConfigurationProvider : ModuleConfigurationProviderBase, IModuleConfigurationProvider
 {
-    public ModuleConfigurationProvider()
-    {
-    }
-
     public static string[] FieldsRequiringReload => [ClientId.Name, ClientSecret.Name];
 
     public static readonly FormTextField ClientId = new()
@@ -52,6 +48,14 @@ public class ModuleConfigurationProvider : ModuleConfigurationProviderBase, IMod
         Required = false,
         Text = "The wake word to activate the augmentation when match filter is enabled.",
         DefaultValue = ""
+    };
+    
+    public static readonly FormBooleanField EnableVolumeControlDuringSpeech = new()
+    {
+        Name = "EnableVolumeControlDuringSpeech",
+        Label = "Volume Control During Speech",
+        Text = "Lower Spotify volume when speech or transcription is active.",
+        DefaultValue = true
     };
     
     public static readonly FormBooleanField EnableCharacterReplies = new()
@@ -102,6 +106,7 @@ Daily Mix 6="
             RedirectUri,
             EnableMatchFilter,
             MatchFilterWakeWord,
+            EnableVolumeControlDuringSpeech,
             EnableCharacterReplies,
             SpecialPlaylists,
             TokenPath

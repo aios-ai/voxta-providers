@@ -19,7 +19,18 @@ public class SpotifyActionHandler(
 {
     private Dictionary<string, string> _deviceMap = new();
     private Dictionary<string, string> _playlistMap = new();
-
+    private int? _lastKnownVolume;
+    
+    public Task LowerVolumeAsync(CancellationToken cancellationToken) => FadeVolumeAsync(40, cancellationToken);
+    public async Task RestoreVolumeAsync(CancellationToken cancellationToken)
+    {
+        if (_lastKnownVolume.HasValue)
+        {
+            await spotifyManager.ChangeVolume(_lastKnownVolume.Value, cancellationToken);
+            _lastKnownVolume = null;
+        }
+    }
+    
     public async Task HandleAction(ServerActionMessage message, CancellationToken cancellationToken)
     {
         if (message.Role != Model.Shared.ChatMessageRole.User) return;
@@ -213,8 +224,20 @@ public class SpotifyActionHandler(
             await SendWithPrefix($"No matching results found to queue.", cancellationToken);
         }
     }
-
-
+    
+    private async Task FadeVolumeAsync(int targetVolume, CancellationToken cancellationToken)
+    {
+        var playbackState = getPlaybackState();
+        if (playbackState?.Device?.Id == null) return;
+        
+        if ((playbackState.Device.VolumePercent ?? 100) <= targetVolume)
+            return;
+        
+        _lastKnownVolume = playbackState.Device.VolumePercent;
+        
+        await spotifyManager.ChangeVolume(targetVolume, cancellationToken);
+    }
+    
     private async Task HandleVolume(ServerActionMessage message, CancellationToken cancellationToken)
     {
         if (!message.TryGetArgument("type", out var typeString))

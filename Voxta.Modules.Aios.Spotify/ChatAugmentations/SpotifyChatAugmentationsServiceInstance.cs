@@ -2,9 +2,14 @@ using System.Text.RegularExpressions;
 using Voxta.Abstractions.Chats.Sessions;
 using Voxta.Abstractions.Model;
 using Voxta.Abstractions.Services.ChatAugmentations;
+using Voxta.Abstractions.Chats.Objects.Characters;
+using Voxta.Abstractions.Configuration;
+using Voxta.Abstractions.Scripting.ActionScripts;
+using Voxta.Abstractions.Services.AudioInput.Pipeline;
 using Voxta.Model.Shared;
 using Voxta.Model.WebsocketMessages.ClientMessages;
 using Voxta.Model.WebsocketMessages.ServerMessages;
+using Voxta.Modules.Aios.Spotify.AudioPipelineMiddleware;
 using Voxta.Modules.Aios.Spotify.Clients.Handlers;
 using Voxta.Modules.Aios.Spotify.Clients.Services;
 
@@ -14,13 +19,14 @@ public class SpotifyChatAugmentationsServiceInstance(
     IChatSessionChatAugmentationApi session,
     SpotifyChatAugmentationSettings settings,
     SpotifyPlaybackMonitor spotifyPlaybackMonitor,
-    SpotifyActionHandler spotifyActionHandler
-    ) : IActionInferenceAugmentation
+    SpotifyActionHandler spotifyActionHandler,
+    IServicesConfigurationsSetResolver servicesConfigurationsSetResolver
+    ) : IActionInferenceAugmentation, IChatScriptEventsAugmentation
 {
     public ServiceTypes[] GetRequiredServiceTypes() => [ServiceTypes.ActionInference];
     public string[] GetAugmentationNames() => [VoxtaModule.AugmentationKey];
-
     private readonly CancellationTokenSource _cts = new();
+    private readonly IServicesConfigurationsSetResolver _servicesConfigurationsSetResolver = servicesConfigurationsSetResolver;
     private Task? _monitorTask;
     private bool _disposed;
 
@@ -28,7 +34,7 @@ public class SpotifyChatAugmentationsServiceInstance(
     {
         ObjectDisposedException.ThrowIf(_disposed, nameof(SpotifyChatAugmentationsServiceInstance));
         _monitorTask = spotifyPlaybackMonitor.MonitorSpotifyPlayback(_cts.Token);
-    }   
+    }
     
     public IEnumerable<ClientUpdateContextMessage> RegisterChatContext()
     {
@@ -343,7 +349,7 @@ public class SpotifyChatAugmentationsServiceInstance(
             ? $@"\b(?:{pattern})\b"
             : $@"(?i)(?=.*\b{settings.MatchFilterWakeWord}\b)(?:.*\b(?:{pattern})\b)";
     }
-
+    
     public async ValueTask<bool> TryHandleActionInference(
         ChatMessageData? message,
         ServerActionMessage serverActionMessage,
@@ -355,7 +361,52 @@ public class SpotifyChatAugmentationsServiceInstance(
         await spotifyActionHandler.HandleAction(serverActionMessage, cancellationToken);
         return true;
     }
+    
+    public async Task OnChatScriptEvent(
+        IActionScriptEvent e,
+        ChatMessageData? message,
+        ICharacterOrUserData character,
+        CancellationToken cancellationToken
+    )
+    {
+        if (!settings.EnableVolumeControlDuringSpeech) return;
 
+        switch (e)
+        {
+            case TranscriptionStartedScriptEvent:
+                await spotifyActionHandler.LowerVolumeAsync(cancellationToken);
+                break;
+
+            case TranscriptionFinishedScriptEvent:
+                await spotifyActionHandler.RestoreVolumeAsync(cancellationToken);
+                break;
+
+            case SpeechStartActionScriptEvent:
+                if (!await IsTextToSpeechActiveAsync(cancellationToken)) break;
+                await spotifyActionHandler.LowerVolumeAsync(cancellationToken);
+                break;
+
+            case SpeechCompleteActionScriptEvent:
+                if (!await IsTextToSpeechActiveAsync(cancellationToken)) break;
+                await spotifyActionHandler.RestoreVolumeAsync(cancellationToken);
+                break;
+        }
+    }
+    
+    private async Task<bool> IsTextToSpeechActiveAsync(CancellationToken cancellationToken)
+    {
+        var ttsConfig = await _servicesConfigurationsSetResolver.ResolveOneWithDefaultConfigAsync(
+            session.User.Id,
+            ServiceTypes.TextToSpeech,
+            cancellationToken
+        );
+        
+        return ttsConfig.Module != null
+               && ttsConfig.Settings?.ServiceSettings.TryGetValue("enabled", out var enabledValue) == true
+               && bool.TryParse(enabledValue, out var enabled)
+               && enabled;
+    }
+    
     public async ValueTask DisposeAsync()
     {
         if (_disposed) return;

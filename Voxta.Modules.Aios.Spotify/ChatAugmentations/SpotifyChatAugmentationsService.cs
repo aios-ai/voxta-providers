@@ -1,5 +1,6 @@
 using Microsoft.Extensions.Logging;
 using Voxta.Abstractions.Chats.Sessions;
+using Voxta.Abstractions.Configuration;
 using Voxta.Abstractions.Encryption;
 using Voxta.Abstractions.Security;
 using Voxta.Abstractions.Services;
@@ -14,7 +15,8 @@ namespace Voxta.Modules.Aios.Spotify.ChatAugmentations;
 public class SpotifyChatAugmentationsService(
     ILocalEncryptionProvider localEncryptionProvider,
     ISpotifyManagerFactory spotifyManagerFactory,
-    ILoggerFactory loggerFactory
+    ILoggerFactory loggerFactory,
+    IServicesConfigurationsSetResolver servicesConfigurationsSetResolver
 ) : ServiceBase(loggerFactory.CreateLogger<SpotifyChatAugmentationsService>()), IChatAugmentationsService
 {
     public async Task<IChatAugmentationServiceInstanceBase[]> CreateInstanceAsync(
@@ -27,7 +29,7 @@ public class SpotifyChatAugmentationsService(
         instances.Add(await CreateSpotifyChatAugmentationsServiceInstance(session, cancellationToken));
         return instances.Acquire();
     }
-
+    
     private async Task<SpotifyChatAugmentationsServiceInstance?> CreateSpotifyChatAugmentationsServiceInstance(IChatSessionChatAugmentationApi session, CancellationToken cancellationToken)
     {
         if (!session.IsAugmentationEnabled(VoxtaModule.AugmentationKey))
@@ -49,8 +51,8 @@ public class SpotifyChatAugmentationsService(
         {
             MatchFilterWakeWord = ModuleConfiguration.GetOptional(ModuleConfigurationProvider.MatchFilterWakeWord),
             EnableMatchFilter = ModuleConfiguration.GetRequired(ModuleConfigurationProvider.EnableMatchFilter),
+            EnableVolumeControlDuringSpeech = ModuleConfiguration.GetRequired(ModuleConfigurationProvider.EnableVolumeControlDuringSpeech),
             EnableCharacterReplies = ModuleConfiguration.GetRequired(ModuleConfigurationProvider.EnableCharacterReplies),
-
             SpecialPlaylists = playlistMap
         };
 
@@ -78,7 +80,8 @@ public class SpotifyChatAugmentationsService(
             session,
             config,
             spotifyPlaybackMonitor,
-            spotifyActionHandler
+            spotifyActionHandler,
+            servicesConfigurationsSetResolver
         );
         try
         {
