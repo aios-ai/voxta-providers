@@ -1,4 +1,5 @@
 using System.Globalization;
+using System.Text;
 using System.Text.RegularExpressions;
 using Microsoft.Extensions.Logging;
 using Voxta.Abstractions.Chats.Sessions;
@@ -10,7 +11,6 @@ using Voxta.Model.WebsocketMessages.ClientMessages;
 using Voxta.Model.WebsocketMessages.ServerMessages;
 using Voxta.Modules.Aios.OpenWeather.Clients;
 using Voxta.Modules.Aios.OpenWeather.Helper;
-
 // ReSharper disable InconsistentNaming
 
 namespace Voxta.Modules.Aios.OpenWeather.ChatAugmentations;
@@ -25,8 +25,13 @@ public class OpenWeatherChatAugmentationsServiceInstance(
     public ServiceTypes[] GetRequiredServiceTypes() => [ServiceTypes.ActionInference];
     public string[] GetAugmentationNames() => [VoxtaModule.AugmentationKey];
     private readonly CultureInfo _culture = session.MainCharacter.Culture;
-    private readonly bool _weatherExpertMode = chatAugmentationSettings.WeatherExpertMode;
-    private readonly bool _pollutionExpertMode = chatAugmentationSettings.PollutionExpertMode;
+    private readonly HashSet<string> _weatherDetails =
+	    (chatAugmentationSettings.WeatherDetails ?? Array.Empty<string>())
+	    .ToHashSet(StringComparer.OrdinalIgnoreCase);
+    private readonly HashSet<string> _pollutionDetails =
+	    (chatAugmentationSettings.PollutionDetails ?? Array.Empty<string>())
+	    .ToHashSet(StringComparer.OrdinalIgnoreCase);
+    public string cacheDir = chatAugmentationSettings.TileCachePath;
     public enum MapTargetType { Global, Continent, Country }
 
     public IEnumerable<ClientUpdateContextMessage> RegisterChatContext()
@@ -247,23 +252,26 @@ public class OpenWeatherChatAugmentationsServiceInstance(
 			var unitSuffix = chatAugmentationSettings.Units == "imperial" ? "°F" : "°C";
 			
 			string messageText;
-			if (_weatherExpertMode)
-			{
-				messageText =
-					$"The current temperature in {location} ({weatherData.Sys.Country}) is {weatherData.Main.Temp}{unitSuffix} " +
-					$"(feels like {weatherData.Main.FeelsLike}{unitSuffix}) with {weatherData.Weather[0].Description}{rainPrecipitationText}{snowPrecipitationText}. " +
-					$"The temperature ranges between {weatherData.Main.TempMin}-{weatherData.Main.TempMax}{unitSuffix}. " +
-					$"Wind: {weatherData.Wind.Speed:0.#} m/s at {weatherData.Wind.Deg}°, " +
-					$"Cloud cover: {weatherData.Clouds.All}%, " +
-					$"Visibility: {weatherData.Visibility / 1000.0:0.#} km.";
-			}
+			var sb = new StringBuilder();
+
+			if (_weatherDetails.Contains("Temp"))
+				sb.Append($"The current temperature in {location} ({weatherData.Sys.Country}) is {weatherData.Main.Temp}{unitSuffix} ");
 			else
-			{
-				messageText =
-					$"The current temperature in {location} ({weatherData.Sys.Country}) is {weatherData.Main.Temp}{unitSuffix} " +
-					$"with {weatherData.Weather[0].Description}{rainPrecipitationText}{snowPrecipitationText}. " +
-					$"The temperature ranges between {weatherData.Main.TempMin}-{weatherData.Main.TempMax}{unitSuffix}.";
-			}
+				sb.Append($"The current weather in {location} ({weatherData.Sys.Country}) is ");
+			if (_weatherDetails.Contains("FeelsLike"))
+				sb.Append($"(feels like {weatherData.Main.FeelsLike}{unitSuffix}) ");
+			if (_weatherDetails.Contains("Condition"))
+				sb.Append($"with {weatherData.Weather[0].Description}{rainPrecipitationText}{snowPrecipitationText}. ");
+			if (_weatherDetails.Contains("TempMinMax"))
+				sb.Append($"The temperature ranges between {weatherData.Main.TempMin}-{weatherData.Main.TempMax}{unitSuffix}. ");
+			if (_weatherDetails.Contains("Wind"))
+				sb.Append($"Wind: {weatherData.Wind.Speed:0.#} m/s at {weatherData.Wind.Deg}°. ");
+			if (_weatherDetails.Contains("CloudCover"))
+				sb.Append($"Cloud cover: {weatherData.Clouds.All}%. ");
+			if (_weatherDetails.Contains("Visibility"))
+				sb.Append($"Visibility: {weatherData.Visibility / 1000.0:0.#} km. ");
+
+			messageText = sb.ToString().Trim();
 			
 		    await session.SendSecretAsync(messageText, cancellationToken);
 		    await session.TriggerReplyAsync(cancellationToken);
@@ -291,7 +299,8 @@ public class OpenWeatherChatAugmentationsServiceInstance(
 		}
 		
 		var unitSuffix = chatAugmentationSettings.Units == "imperial" ? "°F" : "°C";
-		var summaryText = WeatherForecastSummariser.Summarise(forecast.List, _culture,  _weatherExpertMode,days: 5, unitSuffix);
+		var summaryText = WeatherForecastSummariser.Summarise(forecast.List, _culture, _weatherDetails, days: 5, unitSuffix);
+
 		var introText = $"Weather forecast for {location} ({forecast.City.Country}):";
 		var messageText = $"{introText}\n{summaryText}";
 	    
@@ -320,19 +329,31 @@ public class OpenWeatherChatAugmentationsServiceInstance(
 			var components = pollutionData.List[0].Components;
 
 			string messageText;
-			if (_pollutionExpertMode)
+			var sb = new StringBuilder();
+			sb.Append($"Current air quality in {location}: ");
+
+			if (_pollutionDetails.Contains("AQI"))
 			{
-				messageText = $"Current air quality in {location}: AQI {aqi} ({AirPollutionForecastSummariser.GetAqiLabel(aqi)})\n" +
-				              $"CO: {components.Co} µg/m³, NO: {components.No} µg/m³, NO₂: {components.No2} µg/m³, " +
-				              $"O₃: {components.O3} µg/m³, SO₂: {components.So2} µg/m³, PM2.5: {components.Pm2_5} µg/m³, " +
-				              $"PM10: {components.Pm10} µg/m³, NH₃: {components.Nh3} µg/m³";
+				sb.Append($"AQI {aqi} ({AirPollutionForecastSummariser.GetAqiLabel(aqi)}) ");
 			}
-			else
-			{
-				messageText = $"Current air quality in {location}: AQI {aqi} ({AirPollutionForecastSummariser.GetAqiLabel(aqi)})\n" +
-				              $"PM2.5: {components.Pm2_5} µg/m³, PM10: {components.Pm10} µg/m³, " +
-				              $"NO₂: {components.No2} µg/m³, O₃: {components.O3} µg/m³";
-			}
+			if (_pollutionDetails.Contains("CO"))
+				sb.Append($"CO: {components.Co} µg/m³, ");
+			if (_pollutionDetails.Contains("NO"))
+				sb.Append($"NO: {components.No} µg/m³, ");
+			if (_pollutionDetails.Contains("NO2"))
+				sb.Append($"NO₂: {components.No2} µg/m³, ");
+			if (_pollutionDetails.Contains("O3"))
+				sb.Append($"O₃: {components.O3} µg/m³, ");
+			if (_pollutionDetails.Contains("SO2"))
+				sb.Append($"SO₂: {components.So2} µg/m³, ");
+			if (_pollutionDetails.Contains("PM2.5"))
+				sb.Append($"PM2.5: {components.Pm2_5} µg/m³, ");
+			if (_pollutionDetails.Contains("PM10"))
+				sb.Append($"PM10: {components.Pm10} µg/m³, ");
+			if (_pollutionDetails.Contains("NH3"))
+				sb.Append($"NH₃: {components.Nh3} µg/m³, ");
+			
+			messageText = sb.ToString().Trim().TrimEnd(',');
 
 			await session.SendSecretAsync(messageText, cancellationToken);
 			await session.TriggerReplyAsync(cancellationToken);
@@ -361,7 +382,7 @@ public class OpenWeatherChatAugmentationsServiceInstance(
 		        return;
 	        }
 	        
-	        var summaryText = AirPollutionForecastSummariser.Summarise(forecastData.List, _culture, days: 5, _pollutionExpertMode);
+	        var summaryText = AirPollutionForecastSummariser.Summarise(forecastData.List, _culture, _pollutionDetails, days: 5);
 	        var introText = $"Air pollution forecast for {location}:";
 	        var messageText = $"{introText}\n{summaryText}";
 
@@ -381,7 +402,7 @@ public class OpenWeatherChatAugmentationsServiceInstance(
 		string normalizedLayer,
 		CancellationToken cancellationToken)
 	{
-		var bytes = await client.FetchWeatherMapAsync(target, normalizedLayer, cancellationToken);
+		var bytes = await client.FetchWeatherMapAsync(target, normalizedLayer, cacheDir, cancellationToken);
 
 		if (bytes == null || bytes.Length == 0)
 		{
@@ -453,7 +474,6 @@ public class OpenWeatherChatAugmentationsServiceInstance(
 		
 		return (MapTargetType.Global, "Global");
 	}
-
 	
 	private static string CleanLocationString(string input)
 	{

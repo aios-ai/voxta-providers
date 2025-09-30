@@ -36,25 +36,49 @@ public class ModuleConfigurationProvider : ModuleConfigurationProviderBase, IMod
         DefaultValue = "imperial",
     };
     
-    public static readonly FormBooleanField WeatherExpertMode = new()
+    public static readonly FormMultilineField WeatherDetails = new()
     {
-        Name = "WeatherExpertMode",
-        Label = "Show full weather details",
-        DefaultValue = false,
-        Text = "When enabled, the AI will display all available weather details (feels-like temperature, wind speed/direction, cloud cover, visibility, precipitation probability, etc.). " +
-               "When disabled, only the basic forecast (condition, min/max temperature, precipitation) will be shown.",
+        Name = "WeatherDetails",
+        Label = "Weather details to show",
+        Text = "Available keys. One per line: " +
+               "<code>Temp FeelsLike Precipitation TempMinMax Wind CloudCover Visibility</code> " +
+               "(Explanations: Precipitation = rain/snow; Temp = current temperature; " +
+               "FeelsLike = feels-like temperature; TempMinMax = min/max temperature; Wind = speed and direction; " +
+               "CloudCover = percentage; Visibility = in km.)",
+        Rows = 7,
+        DefaultValue =
+@"Temp
+TempMinMax
+Precipitation"
     };
-
     
-    public static readonly FormBooleanField PollutionExpertMode = new()
+    public static readonly FormMultilineField PollutionDetails = new()
     {
-        Name = "PollutionExpertMode",
-        Label = "Show full air pollution details",
-        DefaultValue = false,
-        Text = "When enabled, the AI will display all available pollutant concentrations (CO, NO, NO₂, O₃, SO₂, PM2.5, PM10, NH₃) in air quality reports. " +
-               "When disabled, only the most common values (AQI, PM2.5, PM10, NO₂, O₃) will be shown.",
+        Name = "PollutionDetails",
+        Label = "Air pollution details to show",
+        Text = "Available keys. One per line: " +
+               "<code>AQI CO NO NO2 O3 SO2 PM2.5 PM10 NH3</code> " +
+               "(Explanations: AQI = Air Quality Index; CO = Carbon monoxide; NO = Nitric oxide; " +
+               "NO2 = Nitrogen dioxide; O3 = Ozone; SO2 = Sulfur dioxide; PM2.5 = Particulate matter <2.5µm; " +
+               "PM10 = Particulate matter <10µm; NH3 = Ammonia.)",
+        Rows = 9,
+        DefaultValue = 
+@"AQI
+PM2.5
+PM10
+NO2
+O3"
     };
-
+    
+    public static readonly FormTextField TileCachePath = new()
+    {
+        Name = "TileCachePath",
+        Label = "Tile Cache Path",
+        Required = true,
+        Text = "The path to store the OpenStreetMap tile cache.",
+        DefaultValue = @"%LOCALAPPDATA%\Voxta\Aios.OpenWeather",
+        Advanced = true,
+    };
     
    public Task<FormField[]> GetModuleConfigurationFieldsAsync(
         IAuthenticationContext auth,
@@ -74,8 +98,9 @@ public class ModuleConfigurationProvider : ModuleConfigurationProviderBase, IMod
            ApiKey,
            MyLocation,
            Units,
-           WeatherExpertMode,
-           PollutionExpertMode
+           WeatherDetails,
+           PollutionDetails,
+           TileCachePath
        );
         return Task.FromResult(fields);
     }

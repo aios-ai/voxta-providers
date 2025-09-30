@@ -4,7 +4,7 @@ using Voxta.Modules.Aios.OpenWeather.Clients;
 
 public static class WeatherForecastSummariser
 {
-    public static string Summarise(List<ForecastItem> forecastItems, CultureInfo culture,  bool weatherExpertMode, int days = 5, string unitSuffix = "")
+    public static string Summarise(List<ForecastItem> forecastItems, CultureInfo culture, HashSet<string> weatherDetails, int days = 5, string unitSuffix = "")
     {
         if (forecastItems == null || forecastItems.Count == 0)
             return "No forecast data available.";
@@ -37,16 +37,22 @@ public static class WeatherForecastSummariser
                 .ToList();
 
             if (dayBlock.Any())
-                sb.AppendLine(BuildBlockSummary(date, "Day", dayBlock, unitSuffix, culture, weatherExpertMode));
+                sb.AppendLine(BuildBlockSummary(date, "Day", dayBlock, unitSuffix, culture, weatherDetails));
 
             if (nightBlock.Any())
-                sb.AppendLine(BuildBlockSummary(date, "Night", nightBlock, unitSuffix, culture, weatherExpertMode));
+                sb.AppendLine(BuildBlockSummary(date, "Night", nightBlock, unitSuffix, culture, weatherDetails));
         }
 
         return sb.ToString().Trim();
     }
 
-    private static string BuildBlockSummary(DateTime date, string label, List<ForecastItem> block, string unitSuffix, CultureInfo culture, bool weatherExpertMode)
+    private static string BuildBlockSummary(
+        DateTime date,
+        string label,
+        List<ForecastItem> block,
+        string unitSuffix,
+        CultureInfo culture,
+        HashSet<string> weatherDetails)
     {
         var minTemp = block.Min(x => x.Main.TempMin);
         var maxTemp = block.Max(x => x.Main.TempMax);
@@ -71,18 +77,24 @@ public static class WeatherForecastSummariser
                    $"{culture.TextInfo.ToTitleCase(commonCondition)}, " +
                    $"{minTemp:0.#}–{maxTemp:0.#}{unitSuffix}" +
                    $"{rainText}{snowText}";
-
-        if (weatherExpertMode)
+        
+        if (weatherDetails.Contains("Wind"))
         {
-            // Example: if ForecastItem has Wind, Clouds, Visibility
             var avgWindSpeed = block.Average(x => x.Wind.Speed);
             var avgWindDir = block.Average(x => x.Wind.Deg);
-            var avgClouds = block.Average(x => x.Clouds.All);
-            var avgVisibility = block.Average(x => x.Visibility) / 1000.0;
+            text += $". Wind: {avgWindSpeed:0.#} m/s at {avgWindDir:0.#}°";
+        }
 
-            text += $". Wind: {avgWindSpeed:0.#} m/s at {avgWindDir:0.#}°, " +
-                    $"Cloud cover: {avgClouds:0.#}%, " +
-                    $"Visibility: {avgVisibility:0.#} km";
+        if (weatherDetails.Contains("CloudCover"))
+        {
+            var avgClouds = block.Average(x => x.Clouds.All);
+            text += $", Cloud cover: {avgClouds:0.#}%";
+        }
+
+        if (weatherDetails.Contains("Visibility"))
+        {
+            var avgVisibility = block.Average(x => x.Visibility) / 1000.0;
+            text += $", Visibility: {avgVisibility:0.#} km";
         }
 
         return text + ".";

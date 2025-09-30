@@ -36,6 +36,7 @@ public interface IOpenWeatherClient
     Task<byte[]?> FetchWeatherMapAsync(
         (OpenWeatherChatAugmentationsServiceInstance.MapTargetType Type, string Identifier) target,
         string layer,
+        string cacheDir,
         CancellationToken cancellationToken);
 }
 
@@ -222,9 +223,10 @@ public class OpenWeatherClient(
     public async Task<byte[]?> FetchWeatherMapAsync(
         (OpenWeatherChatAugmentationsServiceInstance.MapTargetType Type, string Identifier) target,
         string layer,
+        string cacheDir,
         CancellationToken cancellationToken)
     {
-        var tileFetcher = new TileFetcher(httpClient);
+        var tileFetcher = new TileFetcher(httpClient, cacheDir);
         
         int zoom;
         int gridSize;

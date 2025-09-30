@@ -7,5 +7,4 @@ public class SpotifyChatAugmentationSettings
     public bool EnableVolumeControlDuringSpeech  { get; init; }
     public bool EnableCharacterReplies { get; init; }
     public Dictionary<string, string> SpecialPlaylists { get; init; } = new();
-
 }

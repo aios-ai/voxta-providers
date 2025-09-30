@@ -4,7 +4,11 @@ using Voxta.Modules.Aios.OpenWeather.Clients;
 
 public static class AirPollutionForecastSummariser
 {
-    public static string Summarise(List<AirPollutionData> forecastItems, CultureInfo culture, int days = 5, bool expertMode = false)
+    public static string Summarise(
+        List<AirPollutionData> forecastItems,
+        CultureInfo culture,
+        HashSet<string> pollutionDetails,
+        int days = 5)
     {
         if (forecastItems == null || forecastItems.Count == 0)
             return "No air pollution forecast data available.";
@@ -37,20 +41,25 @@ public static class AirPollutionForecastSummariser
                 .ToList();
 
             if (dayBlock.Any())
-                sb.AppendLine(BuildBlockSummary(date, "Day", dayBlock, expertMode, culture));
+                sb.AppendLine(BuildBlockSummary(date, "Day", dayBlock, pollutionDetails, culture));
 
             if (nightBlock.Any())
-                sb.AppendLine(BuildBlockSummary(date, "Night", nightBlock, expertMode, culture));
+                sb.AppendLine(BuildBlockSummary(date, "Night", nightBlock, pollutionDetails, culture));
         }
 
         return sb.ToString().Trim();
     }
 
-    private static string BuildBlockSummary(DateTime date, string label, List<AirPollutionData> block, bool expertMode, CultureInfo culture)
+    private static string BuildBlockSummary(
+        DateTime date,
+        string label,
+        List<AirPollutionData> block,
+        HashSet<string> pollutionDetails,
+        CultureInfo culture)
     {
         var avgAqi = (int)Math.Round(block.Average(x => x.Main.Aqi));
         var aqiLabel = GetAqiLabel(avgAqi);
-        
+
         var avg = new
         {
             Co = block.Average(x => x.Components.Co),
@@ -64,19 +73,27 @@ public static class AirPollutionForecastSummariser
         };
 
         var sb = new StringBuilder();
-        sb.Append($"{date.ToString("dddd", culture)} {label}: AQI {avgAqi} ({aqiLabel})");
+        sb.Append($"{date.ToString("dddd", culture)} {label}: ");
 
-        if (expertMode)
-        {
-            sb.Append($", CO: {avg.Co:0.#} µg/m³, NO: {avg.No:0.#} µg/m³, NO₂: {avg.No2:0.#} µg/m³, " +
-                      $"O₃: {avg.O3:0.#} µg/m³, SO₂: {avg.So2:0.#} µg/m³, PM2.5: {avg.Pm2_5:0.#} µg/m³, " +
-                      $"PM10: {avg.Pm10:0.#} µg/m³, NH₃: {avg.Nh3:0.#} µg/m³");
-        }
-        else
-        {
-            sb.Append($", PM2.5: {avg.Pm2_5:0.#} µg/m³, PM10: {avg.Pm10:0.#} µg/m³, " +
-                      $"NO₂: {avg.No2:0.#} µg/m³, O₃: {avg.O3:0.#} µg/m³");
-        }
+        if (pollutionDetails.Contains("AQI"))
+            sb.Append($"AQI {avgAqi} ({aqiLabel})");
+
+        if (pollutionDetails.Contains("CO"))
+            sb.Append($", CO: {avg.Co:0.#} µg/m³");
+        if (pollutionDetails.Contains("NO"))
+            sb.Append($", NO: {avg.No:0.#} µg/m³");
+        if (pollutionDetails.Contains("NO2"))
+            sb.Append($", NO₂: {avg.No2:0.#} µg/m³");
+        if (pollutionDetails.Contains("O3"))
+            sb.Append($", O₃: {avg.O3:0.#} µg/m³");
+        if (pollutionDetails.Contains("SO2"))
+            sb.Append($", SO₂: {avg.So2:0.#} µg/m³");
+        if (pollutionDetails.Contains("PM2.5"))
+            sb.Append($", PM2.5: {avg.Pm2_5:0.#} µg/m³");
+        if (pollutionDetails.Contains("PM10"))
+            sb.Append($", PM10: {avg.Pm10:0.#} µg/m³");
+        if (pollutionDetails.Contains("NH3"))
+            sb.Append($", NH₃: {avg.Nh3:0.#} µg/m³");
 
         return sb.ToString();
     }
