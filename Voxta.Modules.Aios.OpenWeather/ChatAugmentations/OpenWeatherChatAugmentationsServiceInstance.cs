@@ -4,10 +4,13 @@ using Microsoft.Extensions.Logging;
 using Voxta.Abstractions.Chats.Sessions;
 using Voxta.Abstractions.Model;
 using Voxta.Abstractions.Services.ChatAugmentations;
+using Voxta.Abstractions.Services.VisionCapture;
 using Voxta.Model.Shared;
 using Voxta.Model.WebsocketMessages.ClientMessages;
 using Voxta.Model.WebsocketMessages.ServerMessages;
 using Voxta.Modules.Aios.OpenWeather.Clients;
+using Voxta.Modules.Aios.OpenWeather.Helper;
+
 // ReSharper disable InconsistentNaming
 
 namespace Voxta.Modules.Aios.OpenWeather.ChatAugmentations;
@@ -24,6 +27,7 @@ public class OpenWeatherChatAugmentationsServiceInstance(
     private readonly CultureInfo _culture = session.MainCharacter.Culture;
     private readonly bool _weatherExpertMode = chatAugmentationSettings.WeatherExpertMode;
     private readonly bool _pollutionExpertMode = chatAugmentationSettings.PollutionExpertMode;
+    public enum MapTargetType { Global, Continent, Country }
 
     public IEnumerable<ClientUpdateContextMessage> RegisterChatContext()
     {
@@ -49,7 +53,7 @@ public class OpenWeatherChatAugmentationsServiceInstance(
 							new FunctionArgumentDefinition
 							{
 								Name = "get_weather_location",
-								Description = "The exact location for which to retrieve weather data. If the user has not explicitly provided a location in their request, leave this value null/empty. Do not guess, infer, or reuse any previous location.",
+								Description = "The exact location for which to retrieve weather data. If the user has not explicitly provided a location in their request, leave this value empty. Do not guess, infer, or reuse any previous location.",
 								Required = false,
 								Type = FunctionArgumentType.String,
 							}
@@ -69,7 +73,7 @@ public class OpenWeatherChatAugmentationsServiceInstance(
 							new FunctionArgumentDefinition
 							{
 								Name = "get_forecast_location",
-								Description = "The exact location for which to retrieve weather forecast data. If the user has not explicitly provided a location in their request, leave this value null/empty. Do not guess, infer, or reuse any previous location.",
+								Description = "The exact location for which to retrieve weather forecast data. If the user has not explicitly provided a location in their request, leave this value empty. Do not guess, infer, or reuse any previous location.",
 								Required = false,
 								Type = FunctionArgumentType.String,
 							},
@@ -89,7 +93,7 @@ public class OpenWeatherChatAugmentationsServiceInstance(
 							new FunctionArgumentDefinition
 							{
 								Name = "get_air_pollution_location",
-								Description = "The exact location for which to retrieve pollution data. If the user has not explicitly provided a location in their request, leave this value null/empty. Do not guess, infer, or reuse any previous location.",
+								Description = "The exact location for which to retrieve pollution data. If the user has not explicitly provided a location in their request, leave this value empty. Do not guess, infer, or reuse any previous location.",
 								Required = false,
 								Type = FunctionArgumentType.String,
 							}
@@ -109,12 +113,40 @@ public class OpenWeatherChatAugmentationsServiceInstance(
 							new FunctionArgumentDefinition
 							{
 								Name = "get_air_pollution_forecast_location",
-								Description = "The exact location for which to retrieve pollution forecast data. If the user has not explicitly provided a location in their request, leave this value null/empty. Do not guess, infer, or reuse any previous location.",
+								Description = "The exact location for which to retrieve pollution forecast data. If the user has not explicitly provided a location in their request, leave this value empty. Do not guess, infer, or reuse any previous location.",
 								Required = false,
 								Type = FunctionArgumentType.String,
 							}
 						],
 					},
+					new ()
+					{
+						Name = "get_weather_map",
+						Layer = "Weather",
+						ShortDescription = "Get a weather map for a given location and layer",
+						Description = "When {{ user }} asks to see a weather map (e.g. temperature, clouds, wind, pressure, precipitation).",
+						MatchFilter = [@"\b(?:map|radar|satellite|clouds|temperature|wind|pressure|precipitation|rain|snow)\b"],
+						Timing = FunctionTiming.AfterUserMessage,
+						CancelReply = true,
+						Arguments =
+						[
+							new FunctionArgumentDefinition
+							{
+								Name = "get_map_layer",
+								Description = "The weather map layer requested by the user. Possible values: clouds, precipitation, pressure, wind, temp",
+								Required = true,
+								Type = FunctionArgumentType.String,
+							},
+							new FunctionArgumentDefinition
+							{
+								Name = "get_map_location",
+								Description = "The continent or country for which to retrieve a weather map. If the user has not explicitly provided a location in their request, select global.",
+								Required = false,
+								Type = FunctionArgumentType.String,
+							},
+						],
+					},
+
 				]
             }
         ];
@@ -137,7 +169,7 @@ public class OpenWeatherChatAugmentationsServiceInstance(
         switch (serverActionMessage.Value)
         {
             case "get_weather":
-					location = await ResolveLocationAsync(
+					location = await ResolveLocationNameAsync(
 		            serverActionMessage.TryGetArgument("get_weather_location", out loc) ? loc : null,
 		            "No weather data available as the user location is not set and no location was specified.",
 		            cancellationToken);
@@ -146,7 +178,7 @@ public class OpenWeatherChatAugmentationsServiceInstance(
 		            await GetWeather(location, cancellationToken);
                 return true;
             case "get_weather_forecast":
-	            location = await ResolveLocationAsync(
+	            location = await ResolveLocationNameAsync(
 		            serverActionMessage.TryGetArgument("get_forecast_location", out loc) ? loc : null,
 		            "No weather forecast data available as the user location is not set and no location was specified.",
 		            cancellationToken);
@@ -155,7 +187,7 @@ public class OpenWeatherChatAugmentationsServiceInstance(
 					await GetWeatherForecast(location, cancellationToken);
 	            return true;
             case "get_air_pollution":
-	            location = await ResolveLocationAsync(
+	            location = await ResolveLocationNameAsync(
 		            serverActionMessage.TryGetArgument("get_air_pollution_location", out loc) ? loc : null,
 		            "No air pollution data available as the location is not set and no location was specified.",
 		            cancellationToken);
@@ -164,13 +196,22 @@ public class OpenWeatherChatAugmentationsServiceInstance(
 		            await GetAirPollution(location, cancellationToken);
 	            return true;
             case "get_air_pollution_forecast":
-	            location = await ResolveLocationAsync(
+	            location = await ResolveLocationNameAsync(
 		            serverActionMessage.TryGetArgument("get_air_pollution_forecast_location", out loc) ? loc : null,
 		            "No air pollution forecast data available as the user location is not set and no location was specified.",
 		            cancellationToken);
 
 	            if (location != null)
 					await GetAirPollutionForecast(location, cancellationToken);
+	            return true;
+            case "get_weather_map":
+	            var locArg = GetSafeArgument(serverActionMessage, "get_map_location");
+	            var target = ResolveMapTarget(locArg);
+
+	            var rawLayer = GetSafeArgument(serverActionMessage, "get_map_layer");
+	            var normalizedLayer = WeatherMapHelper.NormalizeLayer(rawLayer);
+	            
+	            await GetWeatherMapAsync(target, normalizedLayer, cancellationToken);
 	            return true;
             default:
                 return false;
@@ -185,6 +226,13 @@ public class OpenWeatherChatAugmentationsServiceInstance(
 		try
 		{
 			var weatherData = await client.FetchWeatherData(location, chatAugmentationSettings.Units, cancellationToken);
+			if (weatherData == null)
+			{
+				logger.LogWarning("No weather data returned for {Location}", location);
+				await session.SendSecretAsync($"Sorry, I couldn’t retrieve weather data for {location}.", cancellationToken);
+				await session.TriggerReplyAsync(cancellationToken);
+				return;
+			}
 			
 			var rain = weatherData.Rain?.OneHour ?? 0;
 			var rainPrecipitationText = rain > 0
@@ -234,6 +282,14 @@ public class OpenWeatherChatAugmentationsServiceInstance(
 		location = CleanLocationString(location);
 	    
 		var forecast = await client.FetchForecastData(location, chatAugmentationSettings.Units, cancellationToken);
+		if (forecast == null)
+		{
+			logger.LogWarning("No weather forecast data returned for {Location}", location);
+			await session.SendSecretAsync($"Sorry, I couldn’t retrieve weather forecast data for {location}.", cancellationToken);
+			await session.TriggerReplyAsync(cancellationToken);
+			return;
+		}
+		
 		var unitSuffix = chatAugmentationSettings.Units == "imperial" ? "°F" : "°C";
 		var summaryText = WeatherForecastSummariser.Summarise(forecast.List, _culture,  _weatherExpertMode,days: 5, unitSuffix);
 		var introText = $"Weather forecast for {location} ({forecast.City.Country}):";
@@ -252,6 +308,14 @@ public class OpenWeatherChatAugmentationsServiceInstance(
 		try
 		{
 			var pollutionData = await client.FetchAirPollutionData(location, cancellationToken);
+			if (pollutionData == null)
+			{
+				logger.LogWarning("No pollution data returned for {Location}", location);
+				await session.SendSecretAsync($"Sorry, I couldn’t retrieve pollution data for {location}.", cancellationToken);
+				await session.TriggerReplyAsync(cancellationToken);
+				return;
+			}
+			
 			var aqi = pollutionData.List[0].Main.Aqi;
 			var components = pollutionData.List[0].Components;
 
@@ -289,6 +353,14 @@ public class OpenWeatherChatAugmentationsServiceInstance(
 	    try
 	    {
 	        var forecastData = await client.FetchAirPollutionForecastData(location, cancellationToken);
+	        if (forecastData == null)
+	        {
+		        logger.LogWarning("No forecast pollution data returned for {Location}", location);
+		        await session.SendSecretAsync($"Sorry, I couldn’t retrieve forecast pollution data for {location}.", cancellationToken);
+		        await session.TriggerReplyAsync(cancellationToken);
+		        return;
+	        }
+	        
 	        var summaryText = AirPollutionForecastSummariser.Summarise(forecastData.List, _culture, days: 5, _pollutionExpertMode);
 	        var introText = $"Air pollution forecast for {location}:";
 	        var messageText = $"{introText}\n{summaryText}";
@@ -303,8 +375,39 @@ public class OpenWeatherChatAugmentationsServiceInstance(
 	        await session.TriggerReplyAsync(cancellationToken);
 	    }
 	}
+	
+	private async ValueTask GetWeatherMapAsync(
+		(MapTargetType Type, string Identifier) target,
+		string normalizedLayer,
+		CancellationToken cancellationToken)
+	{
+		var bytes = await client.FetchWeatherMapAsync(target, normalizedLayer, cancellationToken);
 
-	private async Task<string?> ResolveLocationAsync(
+		if (bytes == null || bytes.Length == 0)
+		{
+			logger.LogWarning("No weather map could be generated for {Target}", target.Identifier);
+
+			await session.SendSecretAsync(
+				$"Couldn’t generate a weather map for {target.Identifier} ({WeatherMapHelper.ToDisplayName(normalizedLayer)}).",
+				cancellationToken
+			);
+			await session.TriggerReplyAsync(cancellationToken);
+			return;
+		}
+
+		var image = new BytesImage("image/png", bytes, ComputerVisionSource.Screen)
+		{
+			FileName = $"weathermap_{normalizedLayer}_{target.Identifier}.png"
+		};
+
+		await session.SendNoteAttachmentAsync(
+			$"{{{{ char }}}} fetched the weather map for {target.Identifier} ({WeatherMapHelper.ToDisplayName(normalizedLayer)}). ",
+			image,
+			cancellationToken
+		);
+	}
+	
+	private async Task<string?> ResolveLocationNameAsync(
 		string? providedLocation,
 		string missingLocationMessage,
 		CancellationToken cancellationToken)
@@ -323,20 +426,56 @@ public class OpenWeatherChatAugmentationsServiceInstance(
 
 		return location;
 	}
+	
+	private (MapTargetType Type, string Identifier) ResolveMapTarget(string? providedLocation)
+	{
+		if (string.IsNullOrWhiteSpace(providedLocation))
+			return (MapTargetType.Global, "Global");
+
+		var normalized = providedLocation.Trim();
+		
+		if (string.Equals(normalized, "global", StringComparison.OrdinalIgnoreCase) ||
+		    string.Equals(normalized, "world", StringComparison.OrdinalIgnoreCase) ||
+		    string.Equals(normalized, "earth", StringComparison.OrdinalIgnoreCase))
+		{
+			return (MapTargetType.Global, "Global");
+		}
+		
+		if (WeatherMapHelper.ContinentMap.TryGetValue(normalized.Replace(" ", ""), out var continentCode))
+		{
+			return (MapTargetType.Continent, continentCode);
+		}
+		
+		if (CountryCodeMap.TryGetAlpha2(normalized, out var alpha2))
+		{
+			return (MapTargetType.Country, alpha2!);
+		}
+		
+		return (MapTargetType.Global, "Global");
+	}
 
 	
 	private static string CleanLocationString(string input)
 	{
 		if (string.IsNullOrWhiteSpace(input))
 			return string.Empty;
-		
+
 		input = Regex.Replace(input, @"(?<=[\w])-(?=[\w])", " ");
 		input = Regex.Replace(input, @"[^\w\s]", "");
 		input = Regex.Replace(input, @"\s+", " ").Trim();
 
 		return input;
 	}
-
+	
+	string? GetSafeArgument(ServerActionMessage msg, string argName)
+	{
+		return msg.TryGetArgument(argName, out var value) && 
+		       !string.IsNullOrWhiteSpace(value) && 
+		       !string.Equals(value, "undefined", StringComparison.OrdinalIgnoreCase)
+			? value
+			: null;
+	}
+	
     public ValueTask DisposeAsync()
     {
         return ValueTask.CompletedTask;

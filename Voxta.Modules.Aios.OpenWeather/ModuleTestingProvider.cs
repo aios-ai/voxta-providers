@@ -26,6 +26,18 @@ public class ModuleTestingProvider(
         try
         {
             var weatherData = await client.FetchWeatherData("New York, United States", "imperial", cancellationToken);
+            if (weatherData == null)
+            {
+                return
+                [
+                    new ModuleTestResultItem
+                    {
+                        Success = false,
+                        Message = "Failed to fetch weather data"
+                    }
+                ];
+            }
+            
             return
             [
                 new ModuleTestResultItem
