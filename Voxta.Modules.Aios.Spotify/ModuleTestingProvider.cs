@@ -35,7 +35,7 @@ public class ModuleTestingProvider(
         };
         // TODO: There is no way currently to get a tunnel here
         var ws = broadcastFactory.Create(auth.UserId);
-        var session = new TestUserInteractionWrapper(userInteractionRequestsManager, ws, moduleId, logger, cancellationToken);
+        var session = new TestUserInteractionWrapper(userInteractionRequestsManager, ws, moduleId, cancellationToken);
         var client = await spotifyManagerFactory.CreateSpotifyManager(session, config, cancellationToken);
         try
         {
@@ -69,7 +69,6 @@ public class TestUserInteractionWrapper(
     IUserInteractionRequestsManager userInteractionRequestsManager,
     IVoxtaWebsocketBroadcaster ws,
     Guid moduleId,
-    ILogger logger,
     CancellationToken abort) : ISpotifyUserInteractionWrapper
 {
     public CancellationToken Abort => abort;

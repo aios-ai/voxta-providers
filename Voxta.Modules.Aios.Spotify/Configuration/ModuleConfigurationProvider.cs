@@ -13,7 +13,8 @@ public class ModuleConfigurationProvider : ModuleConfigurationProviderBase, IMod
         Name = "ClientId",
         Label = "Client ID",
         Required = true,
-        Text = "Get your Client ID from your Spotify Developer Dashboard at <a href=\"https://developer.spotify.com/dashboard/\" target=\"_blank\" rel=\"external\">developer.spotify.com</a>.",
+        //language=markdown
+        Text = "Get your Client ID from your Spotify Developer Dashboard at [developer.spotify.com](https://developer.spotify.com/dashboard/).",
     };
     
     public static readonly FormPasswordField ClientSecret = new()
@@ -21,7 +22,8 @@ public class ModuleConfigurationProvider : ModuleConfigurationProviderBase, IMod
         Name = "ClientSecret",
         Label = "Client Secret",
         Required = true,
-        Text = "Get your Client Secret from your Spotify Developer Dashboard at <a href=\"https://developer.spotify.com/dashboard/\" target=\"_blank\" rel=\"external\">developer.spotify.com</a>.",
+        //language=markdown
+        Text = "Get your Client Secret from your Spotify Developer Dashboard at [developer.spotify.com](https://developer.spotify.com/dashboard/).",
     };
     
     public static readonly FormTextField RedirectUri = new()
@@ -29,7 +31,8 @@ public class ModuleConfigurationProvider : ModuleConfigurationProviderBase, IMod
         Name = "RedirectUri",
         Label = "Redirect URI",
         Required = true,
-        Text = "Set your Redirect URI in your Spotify Developer Dashboard at <a href=\"https://developer.spotify.com/dashboard/\" target=\"_blank\" rel=\"external\">developer.spotify.com</a>. It must match exactly.",
+        //language=markdown
+        Text = "Set your Redirect URI in your Spotify Developer Dashboard at [developer.spotify.com](https://developer.spotify.com/dashboard/). It must match exactly.",
         DefaultValue = "http://127.0.0.1:5384/api/extensions/spotify/oauth2/callback"
     };
     
