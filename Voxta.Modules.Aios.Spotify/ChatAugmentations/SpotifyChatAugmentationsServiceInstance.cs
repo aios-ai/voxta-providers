@@ -5,11 +5,9 @@ using Voxta.Abstractions.Services.ChatAugmentations;
 using Voxta.Abstractions.Chats.Objects.Characters;
 using Voxta.Abstractions.Configuration;
 using Voxta.Abstractions.Scripting.ActionScripts;
-using Voxta.Abstractions.Services.AudioInput.Pipeline;
 using Voxta.Model.Shared;
 using Voxta.Model.WebsocketMessages.ClientMessages;
 using Voxta.Model.WebsocketMessages.ServerMessages;
-using Voxta.Modules.Aios.Spotify.AudioPipelineMiddleware;
 using Voxta.Modules.Aios.Spotify.Clients.Handlers;
 using Voxta.Modules.Aios.Spotify.Clients.Services;
 

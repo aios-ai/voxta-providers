@@ -30,8 +30,8 @@ public class ModuleConfigurationProvider : ModuleConfigurationProviderBase, IMod
         Label = "Units",
         Choices =
         [
-            new FormChoicesField.Choice{ Value = "metric", Label = "Metric (Celsius, m/s)"},
-            new FormChoicesField.Choice{ Value = "imperial", Label = "Imperial (Fahrenheit, miles/hour)"},
+            new FormChoice { Value = "metric", Label = "Metric (Celsius, m/s)"},
+            new FormChoice { Value = "imperial", Label = "Imperial (Fahrenheit, miles/hour)"},
         ],
         DefaultValue = "imperial",
     };
