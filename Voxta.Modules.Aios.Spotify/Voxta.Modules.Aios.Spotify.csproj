@@ -17,7 +17,7 @@
 
     <ItemGroup>
         <PackageReference Include="SpotifyAPI.Web" Version="7.2.1" />
-        <PackageReference Include="Voxta.Sdk.Modules" Version="1.0.0-beta.152.2" />
+        <PackageReference Include="Voxta.Sdk.Modules" Version="1.0.0-beta.152.3" />
     </ItemGroup>
 
     <Target Name="CopyToVoxtaModulesPath" AfterTargets="Build">

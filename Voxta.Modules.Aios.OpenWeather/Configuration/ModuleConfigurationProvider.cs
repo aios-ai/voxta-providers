@@ -13,7 +13,8 @@ public class ModuleConfigurationProvider : ModuleConfigurationProviderBase, IMod
         Name = "ApiKey",
         Label = "API Key",
         Required = true,
-        Text = "Create an API key at <a href=\"https://openweathermap.org/api/\" target=\"_blank\" rel=\"external\">openweathermap.org</a>.",
+        //language=markdown
+        Text = "Create an API key at [openweathermap.org](https://openweathermap.org/api).",
     };
     
     public static readonly FormTextField MyLocation = new()
@@ -30,8 +31,8 @@ public class ModuleConfigurationProvider : ModuleConfigurationProviderBase, IMod
         Label = "Units",
         Choices =
         [
-            new FormChoicesField.Choice{ Value = "metric", Label = "Metric (Celsius, m/s)"},
-            new FormChoicesField.Choice{ Value = "imperial", Label = "Imperial (Fahrenheit, miles/hour)"},
+            new FormChoice { Value = "metric", Label = "Metric (Celsius, m/s)"},
+            new FormChoice { Value = "imperial", Label = "Imperial (Fahrenheit, miles/hour)"},
         ],
         DefaultValue = "imperial",
     };
@@ -88,8 +89,9 @@ O3"
    {
        var fields = FormBuilder.Build(
            FormDocumentationField.Create(
+               //language=markdown
                """
-               For this provider to work we rely on a free external API service: <a href="https://openweathermap.org/" target="blank" rel="external">openweathermap.org</a>. They have a free plan which is rate limited to max 60 calls per minute.
+               For this provider to work we rely on a free external API service: [openweathermap.org](https://openweathermap.org/). They have a free plan which is rate limited to max 60 calls per minute.
 
                1. Open the URL and register
                2. Once you are registered and signed in, go to your profile and click on "My API keys"
