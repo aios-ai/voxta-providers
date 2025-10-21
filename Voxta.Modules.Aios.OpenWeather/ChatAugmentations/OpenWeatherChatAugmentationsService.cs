@@ -6,6 +6,10 @@ using Voxta.Abstractions.Services;
 using Voxta.Abstractions.Services.ChatAugmentations;
 using Voxta.Modules.Aios.OpenWeather.Clients;
 using Voxta.Modules.Aios.OpenWeather.Configuration;
+using System.Collections.Generic;
+using System.IO;
+using System.Linq;
+using System;
 
 namespace Voxta.Modules.Aios.OpenWeather.ChatAugmentations;
 
@@ -33,8 +37,8 @@ public class OpenWeatherChatAugmentationsService(
         var logger = loggerFactory.CreateLogger<OpenWeatherChatAugmentationsServiceInstance>();
         var apiKey = localEncryptionProvider.Decrypt(ModuleConfiguration.GetRequired(ModuleConfigurationProvider.ApiKey));
         var client = clientFactory.CreateClient(apiKey);
-        var rawSelectedWeather = ModuleConfiguration.GetOptional(ModuleConfigurationProvider.WeatherDetails) ?? "";
-        var rawSelectedPollution = ModuleConfiguration.GetOptional(ModuleConfigurationProvider.PollutionDetails) ?? "";
+        var rawSelectedWeather = ModuleConfiguration.GetRequired(ModuleConfigurationProvider.WeatherDetails);
+        var rawSelectedPollution = ModuleConfiguration.GetRequired(ModuleConfigurationProvider.PollutionDetails);
         var selectedWeather = ParseKeys(rawSelectedWeather, new[] { "Temp" });
         var selectedPollution = ParseKeys(rawSelectedPollution, new[] { "AQI" });
         var tileCachePath = Path.GetFullPath(Environment.ExpandEnvironmentVariables(ModuleConfiguration.GetRequired(ModuleConfigurationProvider.TileCachePath)));
@@ -50,11 +54,10 @@ public class OpenWeatherChatAugmentationsService(
         return new OpenWeatherChatAugmentationsServiceInstance(session, client, config, logger);
     }
     
-    private static HashSet<string> ParseKeys(string? raw, IEnumerable<string> defaults)
+    private static HashSet<string> ParseKeys(string[]? raw, IEnumerable<string> defaults)
     {
         var keys = new HashSet<string>(
-            (raw ?? string.Empty)
-            .Split(new[] { '\r', '\n' }, StringSplitOptions.RemoveEmptyEntries)
+            (raw ?? Array.Empty<string>())
             .Select(s => s.Trim())
             .Where(s => !string.IsNullOrEmpty(s)),
             StringComparer.OrdinalIgnoreCase);

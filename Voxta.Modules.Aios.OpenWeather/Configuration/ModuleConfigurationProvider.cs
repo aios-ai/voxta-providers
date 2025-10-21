@@ -37,38 +37,64 @@ public class ModuleConfigurationProvider : ModuleConfigurationProviderBase, IMod
         DefaultValue = "imperial",
     };
     
-    public static readonly FormMultilineField WeatherDetails = new()
+    public static readonly FormMultipleChoicesField WeatherDetails = new()
     {
         Name = "WeatherDetails",
         Label = "Weather details to show",
-        Text = "Available keys. One per line: " +
-               "<code>Temp FeelsLike Precipitation TempMinMax Wind CloudCover Visibility</code> " +
-               "(Explanations: Precipitation = rain/snow; Temp = current temperature; " +
-               "FeelsLike = feels-like temperature; TempMinMax = min/max temperature; Wind = speed and direction; " +
-               "CloudCover = percentage; Visibility = in km.)",
-        Rows = 7,
-        DefaultValue =
-@"Temp
-TempMinMax
-Precipitation"
+        Text = """
+               Available keys:
+
+               - `Temp` = current temperature  
+               - `FeelsLike` = feels-like temperature  
+               - `Precipitation` = rain/snow  
+               - `TempMinMax` = min/max temperature  
+               - `Wind` = speed and direction  
+               - `CloudCover` = percentage  
+               - `Visibility` = in km
+               """,
+        Choices =
+        [
+            new() { Label = "Temp", Value = "Temp" },
+            new() { Label = "FeelsLike", Value = "FeelsLike" },
+            new() { Label = "Precipitation", Value = "Precipitation" },
+            new() { Label = "TempMinMax", Value = "TempMinMax" },
+            new() { Label = "Wind", Value = "Wind" },
+            new() { Label = "CloudCover", Value = "CloudCover" },
+            new() { Label = "Visibility", Value = "Visibility" },
+        ],
+        StartValue = ["Temp", "TempMinMax", "Precipitation"],
     };
     
-    public static readonly FormMultilineField PollutionDetails = new()
+    public static readonly FormMultipleChoicesField PollutionDetails = new()
     {
         Name = "PollutionDetails",
         Label = "Air pollution details to show",
-        Text = "Available keys. One per line: " +
-               "<code>AQI CO NO NO2 O3 SO2 PM2.5 PM10 NH3</code> " +
-               "(Explanations: AQI = Air Quality Index; CO = Carbon monoxide; NO = Nitric oxide; " +
-               "NO2 = Nitrogen dioxide; O3 = Ozone; SO2 = Sulfur dioxide; PM2.5 = Particulate matter <2.5µm; " +
-               "PM10 = Particulate matter <10µm; NH3 = Ammonia.)",
-        Rows = 9,
-        DefaultValue = 
-@"AQI
-PM2.5
-PM10
-NO2
-O3"
+        Text = """
+               Available keys:
+
+               - `AQI` = Air Quality Index  
+               - `CO` = Carbon monoxide  
+               - `NO` = Nitric oxide  
+               - `NO2` = Nitrogen dioxide  
+               - `O3` = Ozone  
+               - `SO2` = Sulfur dioxide  
+               - `PM2.5` = Particulate matter <2.5µm  
+               - `PM10` = Particulate matter <10µm  
+               - `NH3` = Ammonia
+               """,
+        Choices =
+        [
+            new() { Label = "AQI", Value = "AQI" },
+            new() { Label = "CO", Value = "CO" },
+            new() { Label = "NO", Value = "NO" },
+            new() { Label = "NO2", Value = "NO2" },
+            new() { Label = "O3", Value = "O3" },
+            new() { Label = "SO2", Value = "SO2" },
+            new() { Label = "PM2.5", Value = "PM2.5" },
+            new() { Label = "PM10", Value = "PM10" },
+            new() { Label = "NH3", Value = "NH3" },
+        ],
+        StartValue = ["AQI", "PM2.5", "PM10", "NO2", "O3"],
     };
     
     public static readonly FormTextField TileCachePath = new()
