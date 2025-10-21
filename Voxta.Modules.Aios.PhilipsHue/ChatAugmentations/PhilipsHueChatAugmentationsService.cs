@@ -43,8 +43,22 @@ public class PhilipsHueChatAugmentationsService(
         };
         
         var hueUserInteractionWrapper = new HueUserInteractionWrapper(session);
-        var manager = new HueManager(session, loggerFactory.CreateLogger<HueManager>(), config.AuthPath, hueUserInteractionWrapper);
-        await manager.InitializeBridgeAsync(cancellationToken);
+        
+        var colorConverterService = new ColorConverterService(loggerFactory.CreateLogger<ColorConverterService>());
+        var bridgeConnectionService = new HueBridgeConnectionService(loggerFactory.CreateLogger<HueBridgeConnectionService>(), hueUserInteractionWrapper, session, config.AuthPath);
+        var dataService = new HueDataService(bridgeConnectionService, loggerFactory.CreateLogger<HueDataService>());
+        var commandService = new HueCommandService(bridgeConnectionService, dataService, loggerFactory.CreateLogger<HueCommandService>());
+        var entityMatchingService = new HueEntityMatchingService(dataService, loggerFactory.CreateLogger<HueEntityMatchingService>());
+
+        var manager = new HueManager(
+            bridgeConnectionService,
+            dataService,
+            commandService,
+            entityMatchingService,
+            colorConverterService,
+            loggerFactory.CreateLogger<HueManager>());
+        
+        await manager.InitializeAsync(cancellationToken);
         return new PhilipsHueChatAugmentationsServiceInstance(session, manager, config, logger);
     }
 }

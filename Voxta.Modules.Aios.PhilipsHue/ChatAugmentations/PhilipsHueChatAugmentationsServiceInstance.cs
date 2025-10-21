@@ -1,6 +1,5 @@
 using System.Globalization;
 using System.Text.RegularExpressions;
-using HueApi.Models.Requests;
 using Microsoft.Extensions.Logging;
 using Voxta.Abstractions.Chats.Sessions;
 using Voxta.Abstractions.Model;
@@ -8,6 +7,7 @@ using Voxta.Abstractions.Services.ChatAugmentations;
 using Voxta.Model.Shared;
 using Voxta.Model.WebsocketMessages.ClientMessages;
 using Voxta.Model.WebsocketMessages.ServerMessages;
+using Voxta.Modules.Aios.PhilipsHue.Clients;
 
 namespace Voxta.Modules.Aios.PhilipsHue.ChatAugmentations;
 
@@ -256,12 +256,7 @@ public class PhilipsHueChatAugmentationsServiceInstance(
                 if (targetIdOn == null || typeOn == null)
                 {
                     logger.LogInformation($"No matching target found, turning on all lights.");
-                    foreach (var light in hue.Lights)
-                    {
-                        var lightCommand = new UpdateLight().TurnOn();
-                        _ = await hue.HueClient.UpdateLightAsync(light.Id, lightCommand);
-                        logger.LogInformation("Turned light on: {MetadataName}", light.Metadata?.Name);
-                    }
+                    await hue.ControlAllLightsAsync(true);
 
                     await SendMessage($"/note {{{{ char }}}} turned on all lights", cancellationToken);
                     return true;
@@ -286,12 +281,7 @@ public class PhilipsHueChatAugmentationsServiceInstance(
                 if (targetIdOff == null || typeOff == null)
                 {
                     logger.LogInformation($"No matching target found, turning off all lights.");
-                    foreach (var light in hue.Lights)
-                    {
-                        var lightCommand = new UpdateLight().TurnOff();
-                        _ = await hue.HueClient.UpdateLightAsync(light.Id, lightCommand);
-                        logger.LogInformation("Turned light on: {MetadataName}", light.Metadata?.Name);
-                    }
+                    await hue.ControlAllLightsAsync(false);
 
                     await SendMessage($"/note {{{{ char }}}} turned off all lights", cancellationToken);
                     return true;
