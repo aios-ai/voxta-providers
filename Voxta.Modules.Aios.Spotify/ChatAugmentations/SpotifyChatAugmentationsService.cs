@@ -47,7 +47,7 @@ public class SpotifyChatAugmentationsService(
                 parts => parts[1]
             );
         
-        var config = new SpotifyChatAugmentationSettings
+        var config = new SpotifyChatAugmentationsSettings
         {
             MatchFilterWakeWord = ModuleConfiguration.GetOptional(ModuleConfigurationProvider.MatchFilterWakeWord),
             EnableMatchFilter = ModuleConfiguration.GetRequired(ModuleConfigurationProvider.EnableMatchFilter),

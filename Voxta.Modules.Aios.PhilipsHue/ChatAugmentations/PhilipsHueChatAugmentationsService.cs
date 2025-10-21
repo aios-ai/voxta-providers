@@ -1,3 +1,5 @@
+using System;
+using System.IO;
 using Microsoft.Extensions.Logging;
 using Voxta.Abstractions.Chats.Sessions;
 using Voxta.Abstractions.Security;
@@ -18,23 +20,29 @@ public class PhilipsHueChatAugmentationsService(
     )
     {
         await using var instances = new ChatAugmentationServiceInitializationHolder();
-        instances.Add(await CreatePhilipsHueChatAugmentationsServiceInstance(session, cancellationToken));
+        instances.Add(await CreatePhilipsHueChatAugmentationsServiceInstance(session, auth, cancellationToken));
         return instances.Acquire();
     }
 
-    private async Task<PhilipsHueChatAugmentationsServiceInstance?> CreatePhilipsHueChatAugmentationsServiceInstance(IChatSessionChatAugmentationApi session, CancellationToken cancellationToken)
+    private async Task<PhilipsHueChatAugmentationsServiceInstance?> CreatePhilipsHueChatAugmentationsServiceInstance(IChatSessionChatAugmentationApi session, IAuthenticationContext auth, CancellationToken cancellationToken)
     {
         if (!session.IsAugmentationEnabled(VoxtaModule.AugmentationKey))
             return null;
         var logger = loggerFactory.CreateLogger<PhilipsHueChatAugmentationsServiceInstance>();
         logger.LogInformation("Chat session {SessionId} has been augmented with {Augmentation}", session.SessionId, VoxtaModule.AugmentationKey);
-        var config = new HueConfig
+        
+        var authPath = Path.GetFullPath(Environment.ExpandEnvironmentVariables(ModuleConfiguration.GetRequired(ModuleConfigurationProvider.AuthPath)));
+        if (!authPath.EndsWith(".json")) throw new InvalidOperationException("AuthPath must end with .json");
+        authPath = authPath[..^5] + $".{auth.UserId}.json";
+
+        var config = new PhilipsHueChatAugmentationsSettings
         {
             Ip = ModuleConfiguration.GetRequired(ModuleConfigurationProvider.BridgeIp),
             Username = ModuleConfiguration.GetRequired(ModuleConfigurationProvider.BridgeUsername),
-            CharacterControlledLight = ModuleConfiguration.GetOptional(ModuleConfigurationProvider.CharacterControlledLight)
+            CharacterControlledLight = ModuleConfiguration.GetOptional(ModuleConfigurationProvider.CharacterControlledLight),
+            AuthPath = authPath
         };
-        var manager = new HueManager(session, loggerFactory.CreateLogger<HueManager>());
+        var manager = new HueManager(session, loggerFactory.CreateLogger<HueManager>(), config.AuthPath);
         await manager.InitializeBridgeAsync(cancellationToken);
         return new PhilipsHueChatAugmentationsServiceInstance(session, manager, config, logger);
     }

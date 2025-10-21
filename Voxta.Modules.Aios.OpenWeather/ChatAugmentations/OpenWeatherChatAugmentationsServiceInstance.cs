@@ -18,7 +18,7 @@ namespace Voxta.Modules.Aios.OpenWeather.ChatAugmentations;
 public class OpenWeatherChatAugmentationsServiceInstance(
 	IChatSessionChatAugmentationApi session,
 	IOpenWeatherClient client,
-	OpenWeatherChatAugmentationSettings chatAugmentationSettings,
+	OpenWeatherChatAugmentationsSettings chatAugmentationsSettings,
 	ILogger<OpenWeatherChatAugmentationsServiceInstance> logger
 	) : IActionInferenceAugmentation
 {
@@ -26,12 +26,12 @@ public class OpenWeatherChatAugmentationsServiceInstance(
     public string[] GetAugmentationNames() => [VoxtaModule.AugmentationKey];
     private readonly CultureInfo _culture = session.MainCharacter.Culture;
     private readonly HashSet<string> _weatherDetails =
-	    (chatAugmentationSettings.WeatherDetails ?? Array.Empty<string>())
+	    (chatAugmentationsSettings.WeatherDetails ?? Array.Empty<string>())
 	    .ToHashSet(StringComparer.OrdinalIgnoreCase);
     private readonly HashSet<string> _pollutionDetails =
-	    (chatAugmentationSettings.PollutionDetails ?? Array.Empty<string>())
+	    (chatAugmentationsSettings.PollutionDetails ?? Array.Empty<string>())
 	    .ToHashSet(StringComparer.OrdinalIgnoreCase);
-    public string cacheDir = chatAugmentationSettings.TileCachePath;
+    public string cacheDir = chatAugmentationsSettings.TileCachePath;
     public enum MapTargetType { Global, Continent, Country }
 
     public IEnumerable<ClientUpdateContextMessage> RegisterChatContext()
@@ -230,7 +230,7 @@ public class OpenWeatherChatAugmentationsServiceInstance(
 
 		try
 		{
-			var weatherData = await client.FetchWeatherData(location, chatAugmentationSettings.Units, cancellationToken);
+			var weatherData = await client.FetchWeatherData(location, chatAugmentationsSettings.Units, cancellationToken);
 			if (weatherData == null)
 			{
 				logger.LogWarning("No weather data returned for {Location}", location);
@@ -249,7 +249,7 @@ public class OpenWeatherChatAugmentationsServiceInstance(
 				? $" and estimated {snow:F1} mm/h precipitation of snow"
 				: "";
 
-			var unitSuffix = chatAugmentationSettings.Units == "imperial" ? "°F" : "°C";
+			var unitSuffix = chatAugmentationsSettings.Units == "imperial" ? "°F" : "°C";
 			
 			string messageText;
 			var sb = new StringBuilder();
@@ -289,7 +289,7 @@ public class OpenWeatherChatAugmentationsServiceInstance(
 		logger.LogInformation("Identified city name: {location}", location);
 		location = CleanLocationString(location);
 	    
-		var forecast = await client.FetchForecastData(location, chatAugmentationSettings.Units, cancellationToken);
+		var forecast = await client.FetchForecastData(location, chatAugmentationsSettings.Units, cancellationToken);
 		if (forecast == null)
 		{
 			logger.LogWarning("No weather forecast data returned for {Location}", location);
@@ -298,7 +298,7 @@ public class OpenWeatherChatAugmentationsServiceInstance(
 			return;
 		}
 		
-		var unitSuffix = chatAugmentationSettings.Units == "imperial" ? "°F" : "°C";
+		var unitSuffix = chatAugmentationsSettings.Units == "imperial" ? "°F" : "°C";
 		var summaryText = WeatherForecastSummariser.Summarise(forecast.List, _culture, _weatherDetails, days: 5, unitSuffix);
 
 		var introText = $"Weather forecast for {location} ({forecast.City.Country}):";
@@ -435,7 +435,7 @@ public class OpenWeatherChatAugmentationsServiceInstance(
 	{
 		var location = !string.IsNullOrWhiteSpace(providedLocation)
 			? providedLocation
-			: chatAugmentationSettings.MyLocation;
+			: chatAugmentationsSettings.MyLocation;
 
 		if (string.IsNullOrWhiteSpace(location))
 		{

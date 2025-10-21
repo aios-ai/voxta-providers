@@ -12,6 +12,11 @@
         <PackageReference Include="HueApi.ColorConverters" Version="1.7.1" />
         <PackageReference Include="Voxta.Sdk.Modules" Version="1.0.3-alpha.1" />
     </ItemGroup>
+	
+    <ItemGroup>
+      <None Remove="Assets\PhilipsHue.png" />
+      <EmbeddedResource Include="Assets\PhilipsHue.png" />
+    </ItemGroup>
 
     <Target Name="CopyToVoxtaModulesPath" AfterTargets="Build">
       <Message Condition=" '$(VoxtaModulesPath)' == '' "

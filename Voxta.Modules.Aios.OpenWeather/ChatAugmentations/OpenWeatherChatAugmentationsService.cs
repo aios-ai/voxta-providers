@@ -42,7 +42,7 @@ public class OpenWeatherChatAugmentationsService(
         var selectedWeather = ParseKeys(rawSelectedWeather, new[] { "Temp" });
         var selectedPollution = ParseKeys(rawSelectedPollution, new[] { "AQI" });
         var tileCachePath = Path.GetFullPath(Environment.ExpandEnvironmentVariables(ModuleConfiguration.GetRequired(ModuleConfigurationProvider.TileCachePath)));
-        var config = new OpenWeatherChatAugmentationSettings
+        var config = new OpenWeatherChatAugmentationsSettings
         {
             MyLocation = ModuleConfiguration.GetRequired(ModuleConfigurationProvider.MyLocation),
             Units = ModuleConfiguration.GetRequired(ModuleConfigurationProvider.Units),

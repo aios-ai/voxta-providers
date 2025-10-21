@@ -1,3 +1,4 @@
+using System.IO;
 using System.Text.Json;
 using HueApi;
 using HueApi.BridgeLocator;
@@ -15,13 +16,14 @@ namespace Voxta.Modules.Aios.PhilipsHue.ChatAugmentations;
 
 public class HueManager(
     IChatSessionChatAugmentationApi session,
-    ILogger<HueManager> logger
+    ILogger<HueManager> logger,
+    string authPath
 )
 {
     private const int MaxRetries = 20;
     private const int RetryIntervalSeconds = 5;
     
-    private static readonly string AppKeyFile = Path.Combine(Directory.GetCurrentDirectory(), @"Providers\configs\UserFunctionProviderHueAuth.json");
+    private readonly string _appKeyFile = authPath;
     
     public LocalHueApi HueClient => _hueClient ?? throw new InvalidOperationException("Hue client not initialized.");
     public IList<Light> Lights => _lights ??= new List<Light>();
@@ -44,7 +46,7 @@ public class HueManager(
     {
             logger.LogInformation("Initializing Hue Bridge...");
 
-            if (File.Exists(AppKeyFile))
+            if (File.Exists(_appKeyFile))
             {
                 logger.LogInformation("Authentication file found. Attempting to connect using saved configuration...");
                 var appKey = LoadAppKey();
@@ -173,9 +175,9 @@ public class HueManager(
     
     private RegisterEntertainmentResult? LoadAppKey()
     {
-        if (File.Exists(AppKeyFile))
+        if (File.Exists(_appKeyFile))
         {
-            return JsonSerializer.Deserialize<RegisterEntertainmentResult>(File.ReadAllText(AppKeyFile));
+            return JsonSerializer.Deserialize<RegisterEntertainmentResult>(File.ReadAllText(_appKeyFile));
         }
         return null;
     }
@@ -190,13 +192,19 @@ public class HueManager(
 
         try
         {
+            var directory = Path.GetDirectoryName(_appKeyFile);
+            if (!string.IsNullOrEmpty(directory) && !Directory.Exists(directory))
+            {
+                Directory.CreateDirectory(directory);
+            }
+
             var json = JsonSerializer.Serialize(appKey);
-            await File.WriteAllTextAsync(AppKeyFile, json);
+            await File.WriteAllTextAsync(_appKeyFile, json);
             logger.LogInformation("App key saved to file.");
         }
         catch (Exception ex)
         {
-            logger.LogError("Failed to save app key to file: {Message}", ex.Message);
+            logger.LogError(ex, "Failed to save app key to file: {Message}", ex.Message);
             throw;
         }
     }

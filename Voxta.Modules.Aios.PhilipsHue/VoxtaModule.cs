@@ -29,6 +29,7 @@ public class VoxtaModule : IVoxtaModule
             Recommended = true,
             Notes = "Philips Hue augmentations.",
             HelpLink = "",
+            Logo = ModuleLogo.EmbeddedResource(typeof(VoxtaModule), "Assets.PhilipsHue.png"),
             Augmentations = [AugmentationKey],
             ModuleConfigurationProviderType = typeof(ModuleConfigurationProvider),
             ModuleConfigurationFieldsRequiringReload = ModuleConfigurationProvider.FieldsRequiringReload,

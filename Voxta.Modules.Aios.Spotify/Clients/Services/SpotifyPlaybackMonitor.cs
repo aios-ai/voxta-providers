@@ -28,9 +28,8 @@ public class SpotifyPlaybackMonitor(
             {
                 PlaybackState = await spotifyManager.GetCurrentPlaybackState(cancellationToken);
 
-                var hasChanges = false;
-                List<string> flags = new();
-                List<string> contexts = new();
+                var flags = new List<string>();
+                var contexts = new List<string>();
 
                 var isConnected = PlaybackState?.Device?.IsActive == true;
                 var wasConnected = _lastKnownState?.Device?.IsActive == true;
@@ -39,104 +38,101 @@ public class SpotifyPlaybackMonitor(
                 var hasTrack = PlaybackState?.Item is FullTrack;
 
                 var connectionChanged = isFirstRun || wasConnected != isConnected;
+                var playbackChanged = isFirstRun || wasPlaying != isPlaying;
+                
                 if (connectionChanged)
                 {
                     if (isConnected)
                     {
                         logger.LogInformation("Spotify is now connected and active.");
                         await SendWithPrefixAsync("Spotify is now connected and active.", cancellationToken);
+                        flags.Add("spotify_connected");
+                        flags.Add("!spotify_disconnected");
                     }
                     else
                     {
                         logger.LogInformation("No active Spotify player found");
                         await SendWithPrefixAsync("No active Spotify player found", cancellationToken);
+                        flags.Add("!spotify_connected");
+                        flags.Add("spotify_disconnected");
                     }
                 }
 
-                var playbackChanged = isConnected && (isFirstRun || wasPlaying != isPlaying);
                 if (playbackChanged)
                 {
-                    logger.LogInformation(isPlaying
-                        ? "Playback started"
-                        : "Playback stopped");
+                    if (isConnected)
+                    {
+                        logger.LogInformation(isPlaying ? "Playback started" : "Playback stopped");
+                        flags.Add(isPlaying ? "playing" : "!playing");
+                    }
+                    else if(wasPlaying)
+                    {
+                        logger.LogInformation("Playback stopped");
+                        flags.Add("!playing");
+                    }
                 }
 
-                if (hasTrack && (_lastKnownState?.Item is FullTrack lastTrack))
+                if (isFirstRun && !isConnected)
+                {
+                    flags.Add("!playing");
+                }
+
+                var hasChanges = false;
+                if (hasTrack && _lastKnownState?.Item is FullTrack lastTrack)
                 {
                     var currentTrack = (FullTrack)PlaybackState!.Item;
-                    if (currentTrack.Id != lastTrack.Id)
-                    {
-                        hasChanges = true;
-                    }
+                    if (currentTrack.Id != lastTrack.Id) hasChanges = true;
                 }
-                else if (hasTrack && !(_lastKnownState?.Item is FullTrack))
+                else if (hasTrack && !(_lastKnownState?.Item is FullTrack)) hasChanges = true;
+
+                if (hasTrack && _lastKnownState != null && HasPositionChanged(PlaybackState!, _lastKnownState!)) hasChanges = true;
+                if (_lastKnownState != null && HasVolumeChanged(PlaybackState!, _lastKnownState!)) hasChanges = true;
+
+                if (flags.Any())
                 {
-                    hasChanges = true;
-                }
-
-                if (hasTrack && HasPositionChanged(PlaybackState!, _lastKnownState!))
-                {
-                    hasChanges = true;
-                }
-
-                if (HasVolumeChanged(PlaybackState!, _lastKnownState!))
-                {
-                    hasChanges = true;
-                }
-
-                if (isConnected)
-                {
-                    flags.Add("spotify_connected");
-                    flags.Add("!spotify_disconnected");
-                    flags.Add(isPlaying ? "playing" : "!playing");
-
-                    if (hasTrack)
-                    {
-                        var track = (FullTrack)PlaybackState!.Item;
-                        var trackName = track.Name ?? "Unknown Track";
-                        var artistName = string.Join(", ", track.Artists.Select(a => a.Name)) ?? "Unknown Artist";
-                        var albumName = track.Album?.Name;
-                        string? releaseYear = null;
-                        if (!string.IsNullOrWhiteSpace(track.Album?.ReleaseDate))
-                        {
-                            releaseYear = track.Album.ReleaseDate.Split('-')[0];
-                        }
-                        var playedTime = StringUtils.FormatMillisecondsToMinutesSeconds(PlaybackState.ProgressMs);
-                        var totalTime = StringUtils.FormatMillisecondsToMinutesSeconds(track.DurationMs);
-
-                        var trackContext = albumName != null
-                            ? $"{trackName} by {artistName} from the album {albumName}"
-                            : $"{trackName} by {artistName}";
-
-                        if (!string.IsNullOrEmpty(releaseYear))
-                            trackContext += $" (Released in {releaseYear})";
-
-                        trackContext += $" ({playedTime}/{totalTime})";
-
-                        var volumeContext = $"(Volume: {PlaybackState.Device?.VolumePercent})";
-
-                        if (isPlaying)
-                            contexts.Add($"{trackContext} {volumeContext}");
-                    }
-                }
-                else
-                {
-                    flags.Add("!spotify_connected");
-                    flags.Add("!playing");
-                    flags.Add("spotify_disconnected");
+                    await session.SetFlags(SetFlagRequest.ParseFlags(flags.Distinct().ToArray()), cancellationToken);
                 }
 
                 if (connectionChanged || playbackChanged || hasChanges)
                 {
-                    _lastKnownState = PlaybackState;
-                    await session.SetFlags(SetFlagRequest.ParseFlags(flags.ToArray()), cancellationToken);
-                    var contextDefinitions = contexts
-                        .Select(c => new ContextDefinition
+                    if (isConnected)
+                    {
+                        if (hasTrack)
                         {
-                            Text = c
-                        })
+                            var track = (FullTrack)PlaybackState!.Item;
+                            var trackName = track.Name ?? "Unknown Track";
+                            var artistName = string.Join(", ", track.Artists.Select(a => a.Name)) ?? "Unknown Artist";
+                            var albumName = track.Album?.Name;
+                            string? releaseYear = null;
+                            if (!string.IsNullOrWhiteSpace(track.Album?.ReleaseDate))
+                            {
+                                releaseYear = track.Album.ReleaseDate.Split('-')[0];
+                            }
+                            var playedTime = StringUtils.FormatMillisecondsToMinutesSeconds(PlaybackState.ProgressMs);
+                            var totalTime = StringUtils.FormatMillisecondsToMinutesSeconds(track.DurationMs);
+
+                            var trackContext = albumName != null
+                                ? $"{trackName} by {artistName} from the album {albumName}"
+                                : $"{trackName} by {artistName}";
+
+                            if (!string.IsNullOrEmpty(releaseYear))
+                                trackContext += $" (Released in {releaseYear})";
+
+                            trackContext += $" ({playedTime}/{totalTime})";
+
+                            var volumeContext = $"(Volume: {PlaybackState.Device?.VolumePercent})";
+
+                            if (isPlaying)
+                                contexts.Add($"{trackContext} {volumeContext}");
+                        }
+                    }
+                    
+                    var contextDefinitions = contexts
+                        .Select(c => new ContextDefinition { Text = c })
                         .ToArray();
                     await session.SetContexts(VoxtaModule.ServiceName, contextDefinitions, cancellationToken);
+                    
+                    _lastKnownState = PlaybackState;
                 }
 
                 isFirstRun = false;

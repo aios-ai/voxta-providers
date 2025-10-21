@@ -1,6 +1,6 @@
 namespace Voxta.Modules.Aios.Spotify.ChatAugmentations;
 
-public class SpotifyChatAugmentationSettings
+public class SpotifyChatAugmentationsSettings
 {
     public bool EnableMatchFilter { get; init; }
     public string? MatchFilterWakeWord { get; init; }

@@ -15,7 +15,7 @@ namespace Voxta.Modules.Aios.Spotify.ChatAugmentations;
 
 public class SpotifyChatAugmentationsServiceInstance(
     IChatSessionChatAugmentationApi session,
-    SpotifyChatAugmentationSettings settings,
+    SpotifyChatAugmentationsSettings settings,
     SpotifyPlaybackMonitor spotifyPlaybackMonitor,
     SpotifyActionHandler spotifyActionHandler,
     IServicesConfigurationsSetResolver servicesConfigurationsSetResolver

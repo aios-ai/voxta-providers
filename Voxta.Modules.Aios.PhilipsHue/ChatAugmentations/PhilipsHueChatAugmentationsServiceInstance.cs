@@ -14,7 +14,7 @@ namespace Voxta.Modules.Aios.PhilipsHue.ChatAugmentations;
 public class PhilipsHueChatAugmentationsServiceInstance(
     IChatSessionChatAugmentationApi session,
     HueManager hue,
-    HueConfig hueConfig,
+    PhilipsHueChatAugmentationsSettings philipsHueChatAugmentationsSettings,
     ILogger<PhilipsHueChatAugmentationsServiceInstance> logger
 ) : IActionInferenceAugmentation, IChatPreProcessAugmentation
 {
@@ -160,7 +160,7 @@ public class PhilipsHueChatAugmentationsServiceInstance(
                                 Description = "PascalCase color name {{ char }} wants to change to."
                             }
                         ],
-                        Disabled = hueConfig.CharacterControlledLight == null
+                        Disabled = philipsHueChatAugmentationsSettings.CharacterControlledLight == null
                     },
                     new()
                     {
@@ -430,7 +430,7 @@ public class PhilipsHueChatAugmentationsServiceInstance(
                 logger.LogInformation("Hex {HexCodeEmotion}", hexCodeEmotion);
 
                 var (targetIdEmotion, typeEmotion, matchedNameEmotion) =
-                    hue.MatchTargetToId(hueConfig.CharacterControlledLight);
+                    hue.MatchTargetToId(philipsHueChatAugmentationsSettings.CharacterControlledLight);
 
                 logger.LogInformation(
                     "Target '{MatchedNameEmotion}' matched to {TypeEmotion} with ID '{TargetIdEmotion}'.", matchedNameEmotion, typeEmotion, targetIdEmotion);

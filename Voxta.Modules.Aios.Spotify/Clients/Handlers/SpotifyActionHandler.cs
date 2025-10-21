@@ -12,7 +12,7 @@ public class SpotifyActionHandler(
     ISpotifyManager spotifyManager,
     SpotifySearchService searchService,
     IChatSessionChatAugmentationApi session,
-    SpotifyChatAugmentationSettings settings,
+    SpotifyChatAugmentationsSettings settings,
     ILogger<SpotifyActionHandler> logger,
     Func<CurrentlyPlayingContext?> getPlaybackState,
     bool enableCharacterReplies = true)

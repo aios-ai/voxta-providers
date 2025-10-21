@@ -34,6 +34,17 @@ public class ModuleConfigurationProvider : ModuleConfigurationProviderBase, IMod
         Text = "Target light, zone or room name the character can control on it's own (optional)",
     };
     
+    public static readonly FormTextField AuthPath = new()
+    {
+        Name = "AuthPath",
+        Label = "Authentication Path",
+        Required = true,
+        Text = "The path to store the PhilipsHue authentication token.",
+        DefaultValue = @"%LOCALAPPDATA%\Voxta\Aios.PhilipsHue\Voxta.Modules.Aios.PhilipsHue.Auth.json",
+        Advanced = true,
+    };
+
+    
    public Task<FormField[]> GetModuleConfigurationFieldsAsync(
         IAuthenticationContext auth,
         ISettingsSource settings,
@@ -41,7 +52,8 @@ public class ModuleConfigurationProvider : ModuleConfigurationProviderBase, IMod
     )
    {
        var fields = FormBuilder.Build(
-           CharacterControlledLight
+           CharacterControlledLight,
+           AuthPath
        );
         return Task.FromResult(fields);
     }
