@@ -1,4 +1,3 @@
-using System.IO;
 using System.Text.Json;
 using HueApi;
 using HueApi.BridgeLocator;
@@ -11,13 +10,15 @@ using HueApi.Models.Requests;
 using Microsoft.Extensions.Logging;
 using Voxta.Abstractions.Chats.Objects.Chats;
 using Voxta.Abstractions.Chats.Sessions;
+using Voxta.Modules.Aios.PhilipsHue.Clients;
 
 namespace Voxta.Modules.Aios.PhilipsHue.ChatAugmentations;
 
 public class HueManager(
     IChatSessionChatAugmentationApi session,
     ILogger<HueManager> logger,
-    string authPath
+    string authPath,
+    IHueUserInteractionWrapper userInteractionWrapper
 )
 {
     private const int MaxRetries = 20;
@@ -29,7 +30,8 @@ public class HueManager(
     public IList<Light> Lights => _lights ??= new List<Light>();
     
     public string? LastUserMessage = null;
-    
+    public bool IsConnected => _hueClient != null; // Added IsConnected property
+
     private LocalHueApi? _hueClient;
     private string? _bridgeIp;
     private IList<Light>? _lights;
@@ -134,42 +136,54 @@ public class HueManager(
             }
             catch (Exception ex)
             {
-                logger.LogWarning(ex, "Failed to connect to the Hue bridge using saved app key.");
-                return;
+                logger.LogWarning(ex, "Failed to connect to the Hue bridge using saved app key. Falling back to registration...");
             }
         }
 
-        logger.LogInformation("Please press the link button on your Hue bridge...");
         await AttemptBridgeRegistrationAsync(cancellationToken);
     }
 
     private async Task AttemptBridgeRegistrationAsync(CancellationToken cancellationToken)
     {
+        await using var _ = await userInteractionWrapper.RequestUserInteraction(cancellationToken);
+        
         var registrationSuccessful = false;
         var retryDelay = TimeSpan.FromSeconds(RetryIntervalSeconds);
         var retries = 0;
 
-        while (!registrationSuccessful && retries < MaxRetries)
+        while (!registrationSuccessful && retries < MaxRetries && !cancellationToken.IsCancellationRequested)
         {
             try
             {
-                var appKey = await LocalHueApi.RegisterAsync(_bridgeIp!, "SampleProviderApp", Environment.MachineName, false);
+                var appKey = await LocalHueApi.RegisterAsync(_bridgeIp!, "Voxta", Environment.MachineName, false);
                 await SaveAppKey(appKey);
                 logger.LogInformation("Bridge connected and app key saved.");
+
+                _hueClient = new LocalHueApi(_bridgeIp, appKey.Username);
+                await RetrieveBridgeDataAsync();
+                await session.SetFlags(SetFlagRequest.ParseFlags(["hueBridge_connected", "!hueBridge_disconnected"]), cancellationToken);
+
                 registrationSuccessful = true;
-                await ConnectBridgeAsync(cancellationToken);
             }
             catch (LinkButtonNotPressedException)
             {
+                if (cancellationToken.IsCancellationRequested) break;
+                
                 retries++;
-                logger.LogWarning("Link button not pressed. Attempt {Retries} of {MaxRetries}. Retrying in {RetryDelaySeconds} seconds. Please press the button and wait...", retries, MaxRetries, retryDelay.Seconds);
+                logger.LogWarning("Link button not pressed. Attempt {Retries} of {MaxRetries}. Retrying in {RetryDelaySeconds} seconds.", retries, MaxRetries, retryDelay.Seconds);
                 await Task.Delay(retryDelay, cancellationToken);
+                
             }
             catch (Exception ex)
             {
-                logger.LogError(ex, "Failed to connect to the Hue bridge. Please try again.");
+                logger.LogError(ex, "Failed to register with the Hue bridge.");
                 return;
             }
+        }
+        
+        if (!registrationSuccessful && !cancellationToken.IsCancellationRequested)
+        {
+            logger.LogError("Failed to register with Hue Bridge after {MaxRetries} retries.", MaxRetries);
         }
     }
     

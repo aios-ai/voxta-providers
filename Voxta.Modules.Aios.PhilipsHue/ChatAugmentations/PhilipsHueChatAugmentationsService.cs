@@ -1,11 +1,10 @@
-using System;
-using System.IO;
 using Microsoft.Extensions.Logging;
 using Voxta.Abstractions.Chats.Sessions;
 using Voxta.Abstractions.Security;
 using Voxta.Abstractions.Services;
 using Voxta.Abstractions.Services.ChatAugmentations;
 using Voxta.Modules.Aios.PhilipsHue.Configuration;
+using Voxta.Modules.Aios.PhilipsHue.Clients;
 
 namespace Voxta.Modules.Aios.PhilipsHue.ChatAugmentations;
 
@@ -42,7 +41,9 @@ public class PhilipsHueChatAugmentationsService(
             CharacterControlledLight = ModuleConfiguration.GetOptional(ModuleConfigurationProvider.CharacterControlledLight),
             AuthPath = authPath
         };
-        var manager = new HueManager(session, loggerFactory.CreateLogger<HueManager>(), config.AuthPath);
+        
+        var hueUserInteractionWrapper = new HueUserInteractionWrapper(session);
+        var manager = new HueManager(session, loggerFactory.CreateLogger<HueManager>(), config.AuthPath, hueUserInteractionWrapper);
         await manager.InitializeBridgeAsync(cancellationToken);
         return new PhilipsHueChatAugmentationsServiceInstance(session, manager, config, logger);
     }

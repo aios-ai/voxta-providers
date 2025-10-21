@@ -36,7 +36,7 @@ public class PhilipsHueChatAugmentationsServiceInstance(
             {
                 ContextKey = VoxtaModule.ServiceName,
                 SessionId = session.SessionId,
-                SetFlags = ["hueBridge_disconnected", "!hueBridge_connected"],
+                SetFlags = hue.IsConnected ? ["hueBridge_connected", "!hueBridge_disconnected"] : ["hueBridge_disconnected", "!hueBridge_connected"],
                 Actions =
                 [
                     // Example action
