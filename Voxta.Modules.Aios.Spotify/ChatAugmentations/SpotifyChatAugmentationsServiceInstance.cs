@@ -363,7 +363,7 @@ public class SpotifyChatAugmentationsServiceInstance(
     public async Task OnChatScriptEvent(
         IActionScriptEvent e,
         ChatMessageData? message,
-        ICharacterOrUserData character,
+        ICharacterOrUserData? character,
         CancellationToken cancellationToken
     )
     {

@@ -1,3 +1,5 @@
+using System.Security.Cryptography;
+using System.Text;
 using Microsoft.Extensions.Logging;
 using SpotifyAPI.Web;
 using Voxta.Abstractions.Chats.Objects.Chats;
@@ -10,16 +12,16 @@ namespace Voxta.Modules.Aios.Spotify.Clients.Services;
 public class SpotifyPlaybackMonitor(
     ISpotifyManager spotifyManager,
     IChatSessionChatAugmentationApi session,
-    ILogger<SpotifyPlaybackMonitor> logger,
-    bool enableCharacterReplies = false)
+    ILogger<SpotifyPlaybackMonitor> logger)
 {
     private CurrentlyPlayingContext? _lastKnownState;
+    private string? _lastAction;
     public CurrentlyPlayingContext? PlaybackState { get; private set; }
 
     public async Task MonitorSpotifyPlayback(CancellationToken cancellationToken)
     {
         await session.SetFlags(SetFlagRequest.ParseFlags(["spotify_disconnected"]), cancellationToken);
-        await session.SetContexts(VoxtaModule.ServiceName, [], cancellationToken);
+        await PublishContextsAsync(null, cancellationToken);
 
         try
         {
@@ -29,7 +31,6 @@ public class SpotifyPlaybackMonitor(
                 PlaybackState = await spotifyManager.GetCurrentPlaybackState(cancellationToken);
 
                 var flags = new List<string>();
-                var contexts = new List<string>();
 
                 var isConnected = PlaybackState?.Device?.IsActive == true;
                 var wasConnected = _lastKnownState?.Device?.IsActive == true;
@@ -45,21 +46,18 @@ public class SpotifyPlaybackMonitor(
                     if (spotifyManager.IsAuthorizationRequired)
                     {
                         logger.LogInformation("Spotify authorization is required.");
-                        await SendWithPrefixAsync(spotifyManager.LastUserVisibleError ?? "Spotify authorization is required. Please authorize Spotify again.", cancellationToken);
                         flags.Add("!spotify_connected");
                         flags.Add("spotify_disconnected");
                     }
                     else if (isConnected)
                     {
                         logger.LogInformation("Spotify is now connected and active.");
-                        await SendWithPrefixAsync("Spotify is now connected and active.", cancellationToken);
                         flags.Add("spotify_connected");
                         flags.Add("!spotify_disconnected");
                     }
                     else
                     {
                         logger.LogInformation("No active Spotify player found");
-                        await SendWithPrefixAsync("No active Spotify player found", cancellationToken);
                         flags.Add("!spotify_connected");
                         flags.Add("spotify_disconnected");
                     }
@@ -102,43 +100,7 @@ public class SpotifyPlaybackMonitor(
 
                 if (connectionChanged || playbackChanged || hasChanges)
                 {
-                    if (isConnected)
-                    {
-                        if (hasTrack)
-                        {
-                            var track = (FullTrack)PlaybackState!.Item;
-                            var trackName = track.Name ?? "Unknown Track";
-                            var artistName = string.Join(", ", track.Artists.Select(a => a.Name)) ?? "Unknown Artist";
-                            var albumName = track.Album?.Name;
-                            string? releaseYear = null;
-                            if (!string.IsNullOrWhiteSpace(track.Album?.ReleaseDate))
-                            {
-                                releaseYear = track.Album.ReleaseDate.Split('-')[0];
-                            }
-                            var playedTime = StringUtils.FormatMillisecondsToMinutesSeconds(PlaybackState.ProgressMs);
-                            var totalTime = StringUtils.FormatMillisecondsToMinutesSeconds(track.DurationMs);
-
-                            var trackContext = albumName != null
-                                ? $"{trackName} by {artistName} from the album {albumName}"
-                                : $"{trackName} by {artistName}";
-
-                            if (!string.IsNullOrEmpty(releaseYear))
-                                trackContext += $" (Released in {releaseYear})";
-
-                            trackContext += $" ({playedTime}/{totalTime})";
-
-                            var volumeContext = $"(Volume: {PlaybackState.Device?.VolumePercent})";
-
-                            if (isPlaying)
-                                contexts.Add($"{trackContext} {volumeContext}");
-                        }
-                    }
-                    
-                    var contextDefinitions = contexts
-                        .Select(c => new ContextDefinition { Text = c })
-                        .ToArray();
-                    await session.SetContexts(VoxtaModule.ServiceName, contextDefinitions, cancellationToken);
-                    
+                    await PublishContextsAsync(PlaybackState, cancellationToken);
                     _lastKnownState = PlaybackState;
                 }
 
@@ -154,6 +116,114 @@ public class SpotifyPlaybackMonitor(
         {
             logger.LogWarning(ex, "Spotify playback monitoring canceled unexpectedly.");
         }
+    }
+
+    public async Task SetLastActionAsync(string action, CancellationToken cancellationToken)
+    {
+        _lastAction = action;
+        await PublishContextsAsync(PlaybackState, cancellationToken);
+    }
+
+    private async Task PublishContextsAsync(CurrentlyPlayingContext? playbackState, CancellationToken cancellationToken)
+    {
+        var contexts = BuildContextDefinitions(playbackState);
+        await session.SetContexts(VoxtaModule.ServiceName, contexts, cancellationToken);
+    }
+
+    private ContextDefinition[] BuildContextDefinitions(CurrentlyPlayingContext? playbackState)
+    {
+        var contexts = new List<ContextDefinition>();
+        var isConnected = playbackState?.Device?.IsActive == true;
+
+        AddContext(
+            contexts,
+            "connection",
+            "Spotify Connection Status",
+            spotifyManager.IsAuthorizationRequired
+                ? spotifyManager.LastUserVisibleError ?? "Spotify authorization is required."
+                : isConnected
+                    ? "Spotify is connected and has an active player."
+                    : "Spotify is disconnected. No active Spotify player was found.");
+
+        if (playbackState?.Device != null)
+        {
+            var device = playbackState.Device;
+            AddContext(
+                contexts,
+                "device",
+                "Spotify Active Device",
+                $"Active Spotify device: {device.Name ?? "Unknown device"} ({device.Type ?? "unknown type"}).");
+
+            if (device.VolumePercent.HasValue)
+            {
+                AddContext(
+                    contexts,
+                    "volume",
+                    "Spotify Volume",
+                    $"Spotify volume: {device.VolumePercent.Value}%.");
+            }
+        }
+
+        if (isConnected)
+        {
+            AddContext(
+                contexts,
+                "playback",
+                "Spotify Playback Status",
+                playbackState?.IsPlaying == true ? "Spotify playback is currently playing." : "Spotify playback is currently paused.");
+        }
+
+        if (playbackState?.Item is FullTrack track)
+        {
+            var trackName = track.Name ?? "Unknown Track";
+            var artistName = string.Join(", ", track.Artists.Select(a => a.Name));
+            if (string.IsNullOrWhiteSpace(artistName))
+                artistName = "Unknown Artist";
+
+            AddContext(
+                contexts,
+                "currently_playing",
+                "Spotify Currently Playing",
+                $"Currently playing on Spotify: {trackName} by {artistName}.");
+
+            if (!string.IsNullOrWhiteSpace(track.Album?.Name))
+            {
+                var albumText = $"Current Spotify album: {track.Album.Name}.";
+                if (!string.IsNullOrWhiteSpace(track.Album.ReleaseDate))
+                    albumText += $" Released in {track.Album.ReleaseDate.Split('-')[0]}.";
+
+                AddContext(contexts, "album", "Spotify Album", albumText);
+            }
+
+            AddContext(
+                contexts,
+                "progress",
+                "Spotify Song Progress",
+                $"Spotify song progress: {StringUtils.FormatMillisecondsToMinutesSeconds(playbackState.ProgressMs)} / {StringUtils.FormatMillisecondsToMinutesSeconds(track.DurationMs)}.");
+        }
+
+        if (!string.IsNullOrWhiteSpace(_lastAction))
+        {
+            AddContext(contexts, "last_action", "Spotify Last Action", $"Last Spotify action: {_lastAction}");
+        }
+
+        return contexts.ToArray();
+    }
+
+    private static void AddContext(List<ContextDefinition> contexts, string key, string name, string text)
+    {
+        contexts.Add(new ContextDefinition
+        {
+            Id = CreateStableContextId(key),
+            Name = name,
+            Text = text
+        });
+    }
+
+    private static Guid CreateStableContextId(string key)
+    {
+        var bytes = MD5.HashData(Encoding.UTF8.GetBytes($"{VoxtaModule.ServiceName}.{key}"));
+        return new Guid(bytes);
     }
 
     private bool HasConnectionStateChanged(CurrentlyPlayingContext newState, CurrentlyPlayingContext oldState)
@@ -183,10 +253,4 @@ public class SpotifyPlaybackMonitor(
                Math.Abs(newState.ProgressMs - oldState.ProgressMs) > 1000;
     }
 
-    private async Task SendWithPrefixAsync(string message, CancellationToken cancellationToken)
-    {
-        await session.SendNoteAsync(message, cancellationToken);
-        if (enableCharacterReplies)
-            await session.TriggerReplyAsync(cancellationToken);
-    }
 }

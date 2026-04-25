@@ -72,9 +72,9 @@ public class SpotifyChatAugmentationsService(
         var spotifySearchService = new SpotifySearchService(spotifyManager, loggerFactory.CreateLogger<SpotifySearchService>());
         await spotifySearchService.InitializeAsync();
 
-        var spotifyPlaybackMonitor = new SpotifyPlaybackMonitor(spotifyManager, session, loggerFactory.CreateLogger<SpotifyPlaybackMonitor>(), config.EnableCharacterReplies);
+        var spotifyPlaybackMonitor = new SpotifyPlaybackMonitor(spotifyManager, session, loggerFactory.CreateLogger<SpotifyPlaybackMonitor>());
         
-        var spotifyActionHandler = new SpotifyActionHandler(spotifyManager, spotifySearchService, session, config, loggerFactory.CreateLogger<SpotifyActionHandler>(), () => spotifyPlaybackMonitor.PlaybackState, config.EnableCharacterReplies);
+        var spotifyActionHandler = new SpotifyActionHandler(spotifyManager, spotifySearchService, session, config, loggerFactory.CreateLogger<SpotifyActionHandler>(), () => spotifyPlaybackMonitor.PlaybackState, spotifyPlaybackMonitor.SetLastActionAsync, config.EnableCharacterReplies);
         
         var instance = new SpotifyChatAugmentationsServiceInstance(
             session,
