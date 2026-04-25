@@ -35,63 +35,81 @@ public class SpotifyActionHandler(
     {
         if (message.Role != Model.Shared.ChatMessageRole.User) return;
 
-        switch (message.Value)
+        try
         {
-            case "toggle_playback":
-                await HandleTogglePlayback(cancellationToken);
-                break;
-            case "spotify_connect":
-                await SendWithPrefix($"No active Spotify client detected. Please start playback in your browser, desktop or mobile Spotify app to connect.", cancellationToken);
-                break;
-            case "play_random_music":
-                await HandlePlayRandomMusic(cancellationToken);
-                break;
-            case "play_special_playlist":
-                await HandlePlaySpecialPlaylist(message, cancellationToken);
-                break;
-            case "play_music":
-                await HandlePlayMusic(message, cancellationToken);
-                break;
-            case "queue_track":
-                await HandleQueueTrack(message, cancellationToken);
-                break;
-            case "volume":
-                await HandleVolume(message, cancellationToken);
-                break;
-            case "seek_playback":
-                await HandleSeekPlayback(message, cancellationToken);
-                break;
-            case "skip_next":
-                await spotifyManager.SkipToPreviousOrNextTrack("next", cancellationToken);
-                await SendWithPrefix($"As requested {{{{ char }}}} skipped to the next track", cancellationToken);
-                break;
-            case "skip_previous":
-                await spotifyManager.SkipToPreviousOrNextTrack("previous", cancellationToken);
-                await SendWithPrefix($"As requested {{{{ char }}}} skipped to the previous track", cancellationToken);
-                break;
-            case "repeat_mode":
-                await HandleRepeatMode(message, cancellationToken);
-                break;
-            case "shuffle_mode":
-                await HandleShuffleMode(message, cancellationToken);
-                break;
-            case "add_to_favorites":
-                await HandleAddToFavorites(cancellationToken);
-                break;
-            case "get_playlists":
-                await HandleGetPlaylists(cancellationToken);
-                break;
-            case "add_to_playlist":
-                await HandleAddToPlaylist(message, cancellationToken);
-                break;
-            case "list_devices":
-                await HandleListDevices(cancellationToken);
-                break;
-            case "transfer_to_device":
-                await HandleTransferToDevice(message, cancellationToken);
-                break;
-            default:
-                throw new NotSupportedException($"Action '{message.Value}' is not supported.");
+            switch (message.Value)
+            {
+                case "toggle_playback":
+                    await HandleTogglePlayback(cancellationToken);
+                    break;
+                case "spotify_connect":
+                    await SendSpotifyFailureOrDefault($"No active Spotify client detected. Please start playback in your browser, desktop or mobile Spotify app to connect.", cancellationToken);
+                    break;
+                case "play_random_music":
+                    await HandlePlayRandomMusic(cancellationToken);
+                    break;
+                case "play_special_playlist":
+                    await HandlePlaySpecialPlaylist(message, cancellationToken);
+                    break;
+                case "play_music":
+                    await HandlePlayMusic(message, cancellationToken);
+                    break;
+                case "queue_track":
+                    await HandleQueueTrack(message, cancellationToken);
+                    break;
+                case "volume":
+                    await HandleVolume(message, cancellationToken);
+                    break;
+                case "seek_playback":
+                    await HandleSeekPlayback(message, cancellationToken);
+                    break;
+                case "skip_next":
+                    if (await spotifyManager.SkipToPreviousOrNextTrack("next", cancellationToken))
+                        await SendWithPrefix($"As requested {{{{ char }}}} skipped to the next track", cancellationToken);
+                    else
+                        await SendSpotifyFailureOrDefault($"Failed to skip to the next Spotify track.", cancellationToken);
+                    break;
+                case "skip_previous":
+                    if (await spotifyManager.SkipToPreviousOrNextTrack("previous", cancellationToken))
+                        await SendWithPrefix($"As requested {{{{ char }}}} skipped to the previous track", cancellationToken);
+                    else
+                        await SendSpotifyFailureOrDefault($"Failed to skip to the previous Spotify track.", cancellationToken);
+                    break;
+                case "repeat_mode":
+                    await HandleRepeatMode(message, cancellationToken);
+                    break;
+                case "shuffle_mode":
+                    await HandleShuffleMode(message, cancellationToken);
+                    break;
+                case "add_to_favorites":
+                    await HandleAddToFavorites(cancellationToken);
+                    break;
+                case "get_playlists":
+                    await HandleGetPlaylists(cancellationToken);
+                    break;
+                case "add_to_playlist":
+                    await HandleAddToPlaylist(message, cancellationToken);
+                    break;
+                case "list_devices":
+                    await HandleListDevices(cancellationToken);
+                    break;
+                case "transfer_to_device":
+                    await HandleTransferToDevice(message, cancellationToken);
+                    break;
+                default:
+                    logger.LogWarning("Unsupported Spotify action '{Action}' received.", message.Value);
+                    await SendWithPrefix($"That Spotify action is not supported.", cancellationToken);
+                    break;
+            }
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            throw;
+        }
+        catch (Exception ex)
+        {
+            logger.LogError(ex, "Spotify action '{Action}' failed unexpectedly.", message.Value);
+            await SendSpotifyFailureOrDefault("Spotify could not complete that request. Please check Spotify and try again.", cancellationToken);
         }
     }
 
@@ -100,8 +118,10 @@ public class SpotifyActionHandler(
         var playbackState = getPlaybackState();
         var isPlaying = playbackState?.IsPlaying ?? false;
         logger.LogInformation($"Toggling music playback. Current state: {isPlaying}, toggling to: {(!isPlaying ? "play" : "pause")}");
-        await spotifyManager.ControlSpotifyPlayback(!isPlaying, cancellationToken);
-        await SendWithPrefix($"As requested {{{{ char }}}} toggled playback to: {(!isPlaying ? "play" : "pause")}", cancellationToken);
+        if (await spotifyManager.ControlSpotifyPlayback(!isPlaying, cancellationToken))
+            await SendWithPrefix($"As requested {{{{ char }}}} toggled playback to: {(!isPlaying ? "play" : "pause")}", cancellationToken);
+        else
+            await SendSpotifyFailureOrDefault("Failed to toggle Spotify playback.", cancellationToken);
     }
 
     private async Task HandlePlayRandomMusic(CancellationToken cancellationToken)
@@ -114,7 +134,11 @@ public class SpotifyActionHandler(
             var selectedTrack = topTracks.Items[randomIndex];
             var randomTrackUri = selectedTrack.Uri;
 
-            await spotifyManager.PlaySpecificUri(randomTrackUri, cancellationToken, "track");
+            if (!await spotifyManager.PlaySpecificUri(randomTrackUri, cancellationToken, "track"))
+            {
+                await SendSpotifyFailureOrDefault("Failed to play a random Spotify track.", cancellationToken);
+                return;
+            }
 
             var trackName = selectedTrack.Name;
             var artistName = string.Join(", ", selectedTrack.Artists.Select(a => a.Name));
@@ -140,8 +164,10 @@ public class SpotifyActionHandler(
         if (settings.SpecialPlaylists.TryGetValue(key, out var playlistId))
         {
             var uri = $"spotify:playlist:{playlistId}";
-            await spotifyManager.PlaySpecificUri(uri, cancellationToken, "playlist");
-            await SendWithPrefix($"Playing your playlist: {playlistName}", cancellationToken);
+            if (await spotifyManager.PlaySpecificUri(uri, cancellationToken, "playlist"))
+                await SendWithPrefix($"Playing your playlist: {playlistName}", cancellationToken);
+            else
+                await SendSpotifyFailureOrDefault($"Failed to play your playlist: {playlistName}", cancellationToken);
             return;
         }
         
@@ -189,8 +215,10 @@ public class SpotifyActionHandler(
 
         if (!string.IsNullOrEmpty(playUri))
         {
-            await spotifyManager.PlaySpecificUri(playUri, cancellationToken, playType);
-            await SendWithPrefix($"Playing {playType}: {playFriendlyName}", cancellationToken);
+            if (await spotifyManager.PlaySpecificUri(playUri, cancellationToken, playType))
+                await SendWithPrefix($"Playing {playType}: {playFriendlyName}", cancellationToken);
+            else
+                await SendSpotifyFailureOrDefault($"Failed to play {playType}: {playFriendlyName}", cancellationToken);
         }
         else
         {
@@ -212,8 +240,10 @@ public class SpotifyActionHandler(
 
         if (queueUri != null && type == "track")
         {
-            await spotifyManager.QueueTrack(queueUri, cancellationToken);
-            await SendWithPrefix($"Added to queue: {queueFriendlyName}", cancellationToken);
+            if (await spotifyManager.QueueTrack(queueUri, cancellationToken))
+                await SendWithPrefix($"Added to queue: {queueFriendlyName}", cancellationToken);
+            else
+                await SendSpotifyFailureOrDefault($"Failed to add to queue: {queueFriendlyName}", cancellationToken);
         }
         else if (type != null && type != "track")
         {
@@ -284,7 +314,7 @@ public class SpotifyActionHandler(
         }
         else
         {
-            await SendWithPrefix("Failed to change Spotify volume.", cancellationToken);
+            await SendSpotifyFailureOrDefault("Failed to change Spotify volume.", cancellationToken);
         }
     }
 
@@ -363,8 +393,10 @@ public class SpotifyActionHandler(
 
         newPositionMs = Math.Max(0, Math.Min(newPositionMs, trackDurationMs));
 
-        await spotifyManager.SeekPlayback((int)newPositionMs, cancellationToken);
-        await SendWithPrefix($"Playback position updated to {StringUtils.FormatMillisecondsToMinutesSeconds((int)newPositionMs)}.", cancellationToken);
+        if (await spotifyManager.SeekPlayback((int)newPositionMs, cancellationToken))
+            await SendWithPrefix($"Playback position updated to {StringUtils.FormatMillisecondsToMinutesSeconds((int)newPositionMs)}.", cancellationToken);
+        else
+            await SendSpotifyFailureOrDefault("Failed to seek Spotify playback.", cancellationToken);
     }
 
     private async Task HandleRepeatMode(ServerActionMessage message, CancellationToken cancellationToken)
@@ -372,8 +404,10 @@ public class SpotifyActionHandler(
         if (!message.TryGetArgument("mode", out var repeatMode))
             repeatMode = "repeat-track";
         repeatMode = StringUtils.CleanString(repeatMode);
-        await spotifyManager.SetRepeatMode(repeatMode, cancellationToken);
-        await SendWithPrefix($"As requested {{{{ char }}}} set the repeat mode to: {repeatMode}", cancellationToken);
+        if (await spotifyManager.SetRepeatMode(repeatMode, cancellationToken))
+            await SendWithPrefix($"As requested {{{{ char }}}} set the repeat mode to: {repeatMode}", cancellationToken);
+        else
+            await SendSpotifyFailureOrDefault("Failed to change Spotify repeat mode.", cancellationToken);
     }
 
     private async Task HandleShuffleMode(ServerActionMessage message, CancellationToken cancellationToken)
@@ -382,8 +416,10 @@ public class SpotifyActionHandler(
             shuffleMode = "off";
         shuffleMode = StringUtils.CleanString(shuffleMode);
         var shuffleModeBool = shuffleMode != "off";
-        await spotifyManager.SetShuffle(shuffleModeBool, cancellationToken);
-        await SendWithPrefix($"As requested {{{{ char }}}} set the shuffle mode to: {shuffleModeBool}", cancellationToken);
+        if (await spotifyManager.SetShuffle(shuffleModeBool, cancellationToken))
+            await SendWithPrefix($"As requested {{{{ char }}}} set the shuffle mode to: {shuffleModeBool}", cancellationToken);
+        else
+            await SendSpotifyFailureOrDefault("Failed to change Spotify shuffle mode.", cancellationToken);
     }
 
     private async Task HandleAddToFavorites(CancellationToken cancellationToken)
@@ -404,14 +440,15 @@ public class SpotifyActionHandler(
 
         try
         {
-            await spotifyManager.AddTrackToLibraryAsync(trackId, trackFriendlyName, cancellationToken);
-
-            await SendWithPrefix($"Track '{trackFriendlyName}' added to your Favorites.", cancellationToken);
+            if (await spotifyManager.AddTrackToLibraryAsync(trackId, trackFriendlyName, cancellationToken))
+                await SendWithPrefix($"Track '{trackFriendlyName}' added to your Favorites.", cancellationToken);
+            else
+                await SendSpotifyFailureOrDefault("Failed to add track to Favorites.", cancellationToken);
         }
         catch (Exception ex)
         {
             logger.LogError($"Failed to add track to favorites: {ex.Message}");
-            await SendWithPrefix("Failed to add track to Favorites.", cancellationToken);
+            await SendSpotifyFailureOrDefault("Failed to add track to Favorites.", cancellationToken);
         }
     }
 
@@ -425,7 +462,7 @@ public class SpotifyActionHandler(
         }
         else
         {
-            await SendWithPrefix($"No playlists available.", cancellationToken);
+            await SendSpotifyFailureOrDefault($"No playlists available.", cancellationToken);
         }
     }
 
@@ -460,9 +497,10 @@ public class SpotifyActionHandler(
         }
 
         var request = new PlaylistAddItemsRequest(new List<string> { trackUri });
-        await spotifyManager.AddItems(playlistId, request, cancellationToken);
-
-        await SendWithPrefix($"Track '{trackFriendlyName}' added to playlist '{playlistFriendlyName}'.", cancellationToken);
+        if (await spotifyManager.AddItems(playlistId, request, cancellationToken))
+            await SendWithPrefix($"Track '{trackFriendlyName}' added to playlist '{playlistFriendlyName}'.", cancellationToken);
+        else
+            await SendSpotifyFailureOrDefault($"Failed to add track to playlist '{playlistFriendlyName}'.", cancellationToken);
     }
 
     private async Task HandleListDevices(CancellationToken cancellationToken)
@@ -475,7 +513,7 @@ public class SpotifyActionHandler(
         }
         else
         {
-            await SendWithPrefix($"No devices available.", cancellationToken);
+            await SendSpotifyFailureOrDefault($"No devices available.", cancellationToken);
         }
     }
 
@@ -510,9 +548,17 @@ public class SpotifyActionHandler(
             }
             return;
         }
-        await spotifyManager.TransferPlayback(matchedDevice.Value, cancellationToken);
-        await SendWithPrefix($"Playback transferred to: {matchedDevice.Key}", cancellationToken);
+        if (await spotifyManager.TransferPlayback(matchedDevice.Value, cancellationToken))
+            await SendWithPrefix($"Playback transferred to: {matchedDevice.Key}", cancellationToken);
+        else
+            await SendSpotifyFailureOrDefault($"Failed to transfer playback to: {matchedDevice.Key}", cancellationToken);
     }
+    
+    private Task SendSpotifyFailureOrDefault(string fallbackMessage, CancellationToken cancellationToken)
+    {
+        return SendWithPrefix(spotifyManager.LastUserVisibleError ?? fallbackMessage, cancellationToken);
+    }
+    
     private async Task SendWithPrefix(string message, CancellationToken cancellationToken)
     {
         await session.SendNoteAsync(message, cancellationToken);

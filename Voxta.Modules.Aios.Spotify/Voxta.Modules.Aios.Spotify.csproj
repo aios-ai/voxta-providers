@@ -5,6 +5,7 @@
         <ImplicitUsings>enable</ImplicitUsings>
         <Nullable>enable</Nullable>
         <CopyLocalLockFileAssemblies>true</CopyLocalLockFileAssemblies>
+        <CopyModuleDebugSymbols>false</CopyModuleDebugSymbols>
     </PropertyGroup>
 
     <ItemGroup>
@@ -27,10 +28,21 @@
       <Message Condition=" '$(VoxtaModulesPath)' != '' "
                Importance="high"
                Text="Copying output to VoxtaModulesPath: $(VoxtaModulesPath)" />
-      <Exec Condition=" '$(VoxtaModulesPath)' != '' "
-            Command="xcopy &quot;$(OutputPath)$(MSBuildProjectName).*&quot; &quot;$(VoxtaModulesPath)\&quot; /Y /Q" />
-        <Exec Condition=" '$(VoxtaModulesPath)' != '' "
-              Command="xcopy &quot;$(OutputPath)SpotifyAPI.Web.*&quot; &quot;$(VoxtaModulesPath)\&quot; /Y /Q" />
+
+      <ItemGroup Condition=" '$(VoxtaModulesPath)' != '' ">
+        <VoxtaModuleRuntimeFiles Include="$(TargetDir)$(TargetFileName)" />
+        <VoxtaModuleRuntimeFiles Include="$(TargetDir)$(AssemblyName).deps.json"
+                                 Condition="Exists('$(TargetDir)$(AssemblyName).deps.json')" />
+        <VoxtaModuleRuntimeFiles Include="$(TargetDir)SpotifyAPI.Web.dll"
+                                 Condition="Exists('$(TargetDir)SpotifyAPI.Web.dll')" />
+        <VoxtaModuleRuntimeFiles Include="$(TargetDir)$(AssemblyName).pdb"
+                                 Condition=" '$(CopyModuleDebugSymbols)' == 'true' and Exists('$(TargetDir)$(AssemblyName).pdb')" />
+      </ItemGroup>
+
+      <Copy Condition=" '$(VoxtaModulesPath)' != '' "
+            SourceFiles="@(VoxtaModuleRuntimeFiles)"
+            DestinationFolder="$(VoxtaModulesPath)"
+            SkipUnchangedFiles="true" />
     </Target>
 
 </Project>

@@ -57,8 +57,7 @@ public class SpotifyManagerFactory(
             
         if (!spotifyManager.HasClient)
         {
-            logger.LogError("Spotify client could not be initialized.");
-            throw new InvalidOperationException("Spotify client could not be initialized.");
+            logger.LogWarning("Spotify client could not be initialized. The chat session will report the authorization problem to the user.");
         }
 
         return spotifyManager;
@@ -67,24 +66,26 @@ public class SpotifyManagerFactory(
 
 public interface ISpotifyManager
 {
+    string? LastUserVisibleError { get; }
+    bool IsAuthorizationRequired { get; }
     Task<CurrentlyPlayingContext?> GetCurrentPlaybackState(CancellationToken cancellationToken);
     Task<Paging<FullTrack>?> GetUsersTopTracks(CancellationToken cancellationToken);
-    Task ControlSpotifyPlayback(bool playback, CancellationToken cancellationToken);
-    Task PlaySpecificUri(string uri, CancellationToken cancellationToken, string? type = null);
-    Task QueueTrack(string uri, CancellationToken cancellationToken);
+    Task<bool> ControlSpotifyPlayback(bool playback, CancellationToken cancellationToken);
+    Task<bool> PlaySpecificUri(string uri, CancellationToken cancellationToken, string? type = null);
+    Task<bool> QueueTrack(string uri, CancellationToken cancellationToken);
     Task<SearchResponse?> SearchSpotify(string query, SearchRequest.Types type, string? market = null);
     Task<string?> GetSpotifyUserIdAsync();
     Task<string?> GetUserMarketAsync();
     Task<bool> ChangeVolume(int volumePercent, CancellationToken cancellationToken);
-    Task SkipToPreviousOrNextTrack(string skipToPrevious, CancellationToken cancellationToken);
-    Task SeekPlayback(int positionMs, CancellationToken cancellationToken);
-    Task SetShuffle(bool shuffleState, CancellationToken cancellationToken);
-    Task SetRepeatMode(string repeatMode, CancellationToken cancellationToken);
+    Task<bool> SkipToPreviousOrNextTrack(string skipToPrevious, CancellationToken cancellationToken);
+    Task<bool> SeekPlayback(int positionMs, CancellationToken cancellationToken);
+    Task<bool> SetShuffle(bool shuffleState, CancellationToken cancellationToken);
+    Task<bool> SetRepeatMode(string repeatMode, CancellationToken cancellationToken);
     Task<Dictionary<string, string>> ListAvailablePlaylists(CancellationToken cancellationToken);
-    Task AddItems(string playlistId, PlaylistAddItemsRequest request, CancellationToken cancellationToken);
-    Task AddTrackToLibraryAsync(string trackId, string trackFriendlyName, CancellationToken cancellationToken);
+    Task<bool> AddItems(string playlistId, PlaylistAddItemsRequest request, CancellationToken cancellationToken);
+    Task<bool> AddTrackToLibraryAsync(string trackId, string trackFriendlyName, CancellationToken cancellationToken);
     Task<Dictionary<string, string>> ListAvailableDevices(CancellationToken cancellationToken);
-    Task TransferPlayback(string deviceId, CancellationToken cancellationToken);
+    Task<bool> TransferPlayback(string deviceId, CancellationToken cancellationToken);
 }
     
 public class SpotifyManager(
@@ -93,8 +94,12 @@ public class SpotifyManager(
     SpotifyManagerConfig config,
     ILogger<SpotifyManager> logger) : ISpotifyManager
 {
+    private const string AuthorizationRequiredMessage = "Spotify authorization is required. Please open Voxta on this machine and authorize Spotify again.";
+    private const string NoActiveDeviceMessage = "No active Spotify device was found. Please start Spotify on your browser, desktop, or mobile app, then try again.";
     private SpotifyClient? _spotifyClient;
     private SpotifyAuthToken? _spotifyAuthToken;
+    public string? LastUserVisibleError { get; private set; }
+    public bool IsAuthorizationRequired { get; private set; }
 
     public async Task InitializeSpotifyClient(CancellationToken cancellationToken)
     {
@@ -103,12 +108,14 @@ public class SpotifyManager(
         if (accessToken != null)
         {
             _spotifyClient = new SpotifyClient(accessToken);
+            ClearUserVisibleError();
             logger.LogInformation("Spotify client authenticated and created successfully");
             logger.LogWarning("Note: This plugin acts solely as an interface between Voxta and your Spotify player. You must have an active Spotify device or playback session that the plugin can connect to and control. Once connected, you can pause and resume playback freely, until the device becomes inactive for a certain period of time.");
         }
         else
         {
             logger.LogError("Failed to initialize Spotify client. Access token could not be retrieved.");
+            SetAuthorizationRequired();
         }
     }
 
@@ -129,7 +136,8 @@ public class SpotifyManager(
                 }
                 catch (Exception ex)
                 {
-                    logger.LogError("Failed to refresh token: {ExMessage}", ex.Message);
+                    logger.LogWarning(ex, "Failed to refresh Spotify token. User authorization is required.");
+                    SetAuthorizationRequired();
                     token = null;
                 }
             }
@@ -163,7 +171,16 @@ public class SpotifyManager(
                 };
 
                 var authUri = loginRequest.ToUri();
-                var code = await GetAuthCodeAsync(authUri, cancellationToken);
+                string code;
+                try
+                {
+                    code = await GetAuthCodeAsync(authUri, cancellationToken);
+                }
+                catch (OperationCanceledException) when (!cancellationToken.IsCancellationRequested)
+                {
+                    SetAuthorizationRequired();
+                    return null;
+                }
 
                 var tokenRequest = new AuthorizationCodeTokenRequest(
                     config.ClientId,
@@ -171,7 +188,17 @@ public class SpotifyManager(
                     code,
                     config.RedirectUri
                 );
-                var response = await auth.RequestToken(tokenRequest, cancellationToken);
+                AuthorizationCodeTokenResponse response;
+                try
+                {
+                    response = await auth.RequestToken(tokenRequest, cancellationToken);
+                }
+                catch (Exception ex)
+                {
+                    logger.LogWarning(ex, "Failed to exchange Spotify authorization code.");
+                    SetAuthorizationRequired();
+                    return null;
+                }
 
                 token = new SpotifyAuthToken
                 {
@@ -183,6 +210,7 @@ public class SpotifyManager(
                 await SaveTokenAsync(token);
             }
         }
+        ClearUserVisibleError();
         return token.AccessToken;
     }
 
@@ -244,9 +272,18 @@ public class SpotifyManager(
         if (!File.Exists(config.TokenPath))
             return null;
 
-        var json = await File.ReadAllTextAsync(config.TokenPath);
-        _spotifyAuthToken = JsonSerializer.Deserialize<SpotifyAuthToken>(json);
-        return JsonSerializer.Deserialize<SpotifyAuthToken>(json);
+        try
+        {
+            var json = await File.ReadAllTextAsync(config.TokenPath);
+            _spotifyAuthToken = JsonSerializer.Deserialize<SpotifyAuthToken>(json);
+            return _spotifyAuthToken;
+        }
+        catch (Exception ex)
+        {
+            logger.LogWarning(ex, "Failed to load Spotify token. User authorization is required.");
+            SetAuthorizationRequired();
+            return null;
+        }
     }
 
     public async Task<CurrentlyPlayingContext?> GetCurrentPlaybackState(CancellationToken cancellationToken)
@@ -261,9 +298,15 @@ public class SpotifyManager(
 
             return await _spotifyClient.Player.GetCurrentPlayback(cancellationToken);
         }
+        catch (APIException ex)
+        {
+            SetSpotifyApiError(ex, "retrieve playback state");
+            return null;
+        }
         catch (Exception ex)
         {
             logger.LogError("Error retrieving playback state: {ExMessage}", ex.Message);
+            LastUserVisibleError = "Spotify playback state could not be retrieved. Please check Spotify and try again.";
             return null;
         }
     }
@@ -280,41 +323,57 @@ public class SpotifyManager(
 
             return await _spotifyClient.Personalization.GetTopTracks(cancellationToken);
         }
+        catch (APIException ex)
+        {
+            SetSpotifyApiError(ex, "retrieve top tracks");
+            return null;
+        }
         catch (Exception ex)
         {
             logger.LogError("Error retrieving top tracks: {ExMessage}", ex.Message);
+            LastUserVisibleError = "Spotify top tracks could not be retrieved. Please check Spotify and try again.";
             return null;
         }
     }
 
-    public async Task ControlSpotifyPlayback(bool playback, CancellationToken cancellationToken)
+    public async Task<bool> ControlSpotifyPlayback(bool playback, CancellationToken cancellationToken)
     {
         if (!await EnsureValidSpotifyClient(cancellationToken) || _spotifyClient == null)
         {
             logger.LogError("Spotify client not valid. Playback cannot be controlled.");
-            return;
+            return false;
         }
 
-        if (playback)
+        try
         {
-            await _spotifyClient.Player.ResumePlayback(cancellationToken);
-            logger.LogInformation("Playback resumed.");
+            if (playback)
+            {
+                await _spotifyClient.Player.ResumePlayback(cancellationToken);
+                logger.LogInformation("Playback resumed.");
+            }
+            else
+            {
+                await _spotifyClient.Player.PausePlayback(cancellationToken);
+                logger.LogInformation("Playback paused.");
+            }
+            ClearUserVisibleError();
+            return true;
         }
-        else
+        catch (APIException ex)
         {
-            await _spotifyClient.Player.PausePlayback(cancellationToken);
-            logger.LogInformation("Playback paused.");
+            SetSpotifyApiError(ex, "control playback");
+            return false;
         }
     }
 
-    public async Task PlaySpecificUri(string uri, CancellationToken cancellationToken, string? type = null)
+    public async Task<bool> PlaySpecificUri(string uri, CancellationToken cancellationToken, string? type = null)
     {
         try
         {
             if (!await EnsureValidSpotifyClient(cancellationToken) || _spotifyClient == null)
             {
                 logger.LogError("Spotify client not valid. Cannot play specific URI.");
-                return;
+                return false;
             }
 
             var request = new PlayerResumePlaybackRequest();
@@ -325,41 +384,76 @@ public class SpotifyManager(
                 request.ContextUri = uri;
 
             await _spotifyClient.Player.ResumePlayback(request, cancellationToken);
+            ClearUserVisibleError();
+            return true;
+        }
+        catch (APIException ex)
+        {
+            SetSpotifyApiError(ex, "start playback");
+            return false;
         }
         catch (Exception ex)
         {
             logger.LogError("Error starting playback: {ExMessage}", ex.Message);
+            LastUserVisibleError = "Spotify could not start playback. Please check the selected item and active device, then try again.";
+            return false;
         }
     }
 
-    public async Task QueueTrack(string uri, CancellationToken cancellationToken)
+    public async Task<bool> QueueTrack(string uri, CancellationToken cancellationToken)
     {
         if (!await EnsureValidSpotifyClient(cancellationToken) || _spotifyClient == null)
         {
             logger.LogError("Spotify client not valid. Cannot queue track.");
-            return;
+            return false;
         }
 
-        await _spotifyClient.Player.AddToQueue(new PlayerAddToQueueRequest(uri), cancellationToken);
+        try
+        {
+            await _spotifyClient.Player.AddToQueue(new PlayerAddToQueueRequest(uri), cancellationToken);
+            ClearUserVisibleError();
+            return true;
+        }
+        catch (APIException ex)
+        {
+            SetSpotifyApiError(ex, "queue track");
+            return false;
+        }
     }
 
     public async Task<SearchResponse?> SearchSpotify(string query, SearchRequest.Types type, string? market = null)
     {
-        if (_spotifyClient == null)
-            throw new InvalidOperationException("Spotify client not initialized.");
+        if (!await EnsureValidSpotifyClient(userInteractionWrapper.Abort) || _spotifyClient == null)
+        {
+            logger.LogError("Spotify client not valid. Cannot search Spotify.");
+            return null;
+        }
 
         var request = new SearchRequest(type, query)
         {
             Market = market
         };
 
-        return await _spotifyClient.Search.Item(request);
+        try
+        {
+            var response = await _spotifyClient.Search.Item(request);
+            ClearUserVisibleError();
+            return response;
+        }
+        catch (APIException ex)
+        {
+            SetSpotifyApiError(ex, "search Spotify");
+            return null;
+        }
     }
 
     public async Task<string?> GetSpotifyUserIdAsync()
     {
         if (_spotifyClient == null)
-            throw new InvalidOperationException("Spotify client not initialized.");
+        {
+            SetAuthorizationRequired();
+            return null;
+        }
 
         try
         {
@@ -370,6 +464,7 @@ public class SpotifyManager(
         catch (APIException ex)
         {
             logger.LogError(ex, "Failed to retrieve Spotify user ID.");
+            SetSpotifyApiError(ex, "retrieve Spotify user profile");
             return null;
         }
     }
@@ -377,7 +472,10 @@ public class SpotifyManager(
     public async Task<string?> GetUserMarketAsync()
     {
         if (_spotifyClient == null)
-            throw new InvalidOperationException("Spotify client not initialized.");
+        {
+            SetAuthorizationRequired();
+            return null;
+        }
 
         try
         {
@@ -388,6 +486,7 @@ public class SpotifyManager(
         catch (APIException ex)
         {
             logger.LogError(ex, "Failed to retrieve user profile for market detection.");
+            SetSpotifyApiError(ex, "retrieve Spotify user market");
             return null;
         }
     }
@@ -400,61 +499,100 @@ public class SpotifyManager(
             return false;
         }
 
-        await _spotifyClient.Player.SetVolume(new PlayerVolumeRequest(volumePercent), cancellationToken);
-        logger.LogInformation("Volume set to {VolumePercent}%", volumePercent);
-        return true;
+        try
+        {
+            await _spotifyClient.Player.SetVolume(new PlayerVolumeRequest(volumePercent), cancellationToken);
+            logger.LogInformation("Volume set to {VolumePercent}%", volumePercent);
+            ClearUserVisibleError();
+            return true;
+        }
+        catch (APIException ex)
+        {
+            SetSpotifyApiError(ex, "change volume");
+            return false;
+        }
     }
 
-    public async Task SkipToPreviousOrNextTrack(string skipToPrevious, CancellationToken cancellationToken)
+    public async Task<bool> SkipToPreviousOrNextTrack(string skipToPrevious, CancellationToken cancellationToken)
     {
         if (!await EnsureValidSpotifyClient(cancellationToken) || _spotifyClient == null)
         {
             logger.LogError("Spotify client not valid. Cannot skip track.");
-            return;
+            return false;
         }
 
-        if (skipToPrevious == "previous")
+        try
         {
-            await _spotifyClient.Player.SkipPrevious(cancellationToken);
-            logger.LogInformation("Skipped to previous track");
+            if (skipToPrevious == "previous")
+            {
+                await _spotifyClient.Player.SkipPrevious(cancellationToken);
+                logger.LogInformation("Skipped to previous track");
+            }
+            else
+            {
+                await _spotifyClient.Player.SkipNext(cancellationToken);
+                logger.LogInformation("Skipped to next track");
+            }
+            ClearUserVisibleError();
+            return true;
         }
-        else
+        catch (APIException ex)
         {
-            await _spotifyClient.Player.SkipNext(cancellationToken);
-            logger.LogInformation("Skipped to next track");
+            SetSpotifyApiError(ex, "skip track");
+            return false;
         }
     }
 
-    public async Task SeekPlayback(int positionMs, CancellationToken cancellationToken)
+    public async Task<bool> SeekPlayback(int positionMs, CancellationToken cancellationToken)
     {
         if (!await EnsureValidSpotifyClient(cancellationToken) || _spotifyClient == null)
         {
             logger.LogError("Spotify client not valid. Cannot seek playback.");
-            return;
+            return false;
         }
 
-        await _spotifyClient.Player.SeekTo(new PlayerSeekToRequest(positionMs), cancellationToken);
-        logger.LogInformation("Playback position set to {PositionMs} ms.", positionMs);
+        try
+        {
+            await _spotifyClient.Player.SeekTo(new PlayerSeekToRequest(positionMs), cancellationToken);
+            logger.LogInformation("Playback position set to {PositionMs} ms.", positionMs);
+            ClearUserVisibleError();
+            return true;
+        }
+        catch (APIException ex)
+        {
+            SetSpotifyApiError(ex, "seek playback");
+            return false;
+        }
     }
 
-    public async Task SetShuffle(bool shuffleState, CancellationToken cancellationToken)
+    public async Task<bool> SetShuffle(bool shuffleState, CancellationToken cancellationToken)
     {
         if (!await EnsureValidSpotifyClient(cancellationToken) || _spotifyClient == null)
         {
             logger.LogError("Spotify client not valid. Cannot set shuffle mode.");
-            return;
+            return false;
         }
 
-        await _spotifyClient.Player.SetShuffle(new PlayerShuffleRequest(shuffleState), cancellationToken);
-        logger.LogInformation("Shuffle mode set to {Off}", shuffleState ? "on" : "off");
+        try
+        {
+            await _spotifyClient.Player.SetShuffle(new PlayerShuffleRequest(shuffleState), cancellationToken);
+            logger.LogInformation("Shuffle mode set to {Off}", shuffleState ? "on" : "off");
+            ClearUserVisibleError();
+            return true;
+        }
+        catch (APIException ex)
+        {
+            SetSpotifyApiError(ex, "set shuffle mode");
+            return false;
+        }
     }
 
-    public async Task SetRepeatMode(string repeatMode, CancellationToken cancellationToken)
+    public async Task<bool> SetRepeatMode(string repeatMode, CancellationToken cancellationToken)
     {
         if (!await EnsureValidSpotifyClient(cancellationToken) || _spotifyClient == null)
         {
             logger.LogError("Spotify client not valid. Cannot set repeat mode.");
-            return;
+            return false;
         }
         PlayerSetRepeatRequest.State repeatState;
 
@@ -471,18 +609,29 @@ public class SpotifyManager(
                 break;
             default:
                 logger.LogError("Invalid repeat mode: {RepeatMode}", repeatMode);
-                return;
+                LastUserVisibleError = "Invalid Spotify repeat mode. Please use track, context, or off.";
+                return false;
         }
 
-        var request = new PlayerSetRepeatRequest(repeatState);
-        var result = await _spotifyClient.Player.SetRepeat(request, cancellationToken);
-        if (result)
+        try
         {
-            logger.LogInformation("Repeat mode set to {RepeatMode}", repeatMode);
-        }
-        else
-        {
+            var request = new PlayerSetRepeatRequest(repeatState);
+            var result = await _spotifyClient.Player.SetRepeat(request, cancellationToken);
+            if (result)
+            {
+                logger.LogInformation("Repeat mode set to {RepeatMode}", repeatMode);
+                ClearUserVisibleError();
+                return true;
+            }
+
             logger.LogError("Failed to set repeat mode to {RepeatMode}.", repeatMode);
+            LastUserVisibleError = "Spotify did not accept the repeat mode change. Please check the active device and try again.";
+            return false;
+        }
+        catch (APIException ex)
+        {
+            SetSpotifyApiError(ex, "set repeat mode");
+            return false;
         }
     }
 
@@ -496,53 +645,70 @@ public class SpotifyManager(
             return playlistMap;
         }
 
-        var page = await _spotifyClient.Playlists.CurrentUsers(cancellationToken);
-
-        while (page.Items is { Count: > 0 })
+        try
         {
-            foreach (var playlist in page.Items)
+            var page = await _spotifyClient.Playlists.CurrentUsers(cancellationToken);
+
+            while (page.Items is { Count: > 0 })
             {
-                if (string.IsNullOrEmpty(playlist.Name) || string.IsNullOrEmpty(playlist.Uri))
-                    continue;
+                foreach (var playlist in page.Items)
+                {
+                    if (string.IsNullOrEmpty(playlist.Name) || string.IsNullOrEmpty(playlist.Uri))
+                        continue;
 
-                playlistMap[playlist.Name] = playlist.Uri;
+                    playlistMap[playlist.Name] = playlist.Uri;
+                }
+
+                if (string.IsNullOrEmpty(page.Next))
+                    break;
+
+                page = await _spotifyClient.NextPage(page);
             }
-
-            if (string.IsNullOrEmpty(page.Next))
-                break;
-
-            page = await _spotifyClient.NextPage(page);
+            ClearUserVisibleError();
+        }
+        catch (APIException ex)
+        {
+            SetSpotifyApiError(ex, "list playlists");
         }
 
         return playlistMap;
     }
 
-    public async Task AddItems(string playlistId, PlaylistAddItemsRequest request, CancellationToken cancellationToken)
+    public async Task<bool> AddItems(string playlistId, PlaylistAddItemsRequest request, CancellationToken cancellationToken)
     {
         if (!await EnsureValidSpotifyClient(cancellationToken) || _spotifyClient == null)
         {
             logger.LogError("Spotify client not valid. Cannot add items to playlist.");
-            return;
+            return false;
         }
 
         try
         {
             await _spotifyClient.Playlists.AddItems(playlistId, request, cancellationToken);
             logger.LogInformation("Track added to playlist: {PlaylistId}", playlistId);
+            ClearUserVisibleError();
+            return true;
+        }
+        catch (APIException ex)
+        {
+            SetSpotifyApiError(ex, "add track to playlist");
+            return false;
         }
         catch (Exception ex)
         {
             logger.LogError("Failed to add track to playlist: {ExMessage}", ex.Message);
+            LastUserVisibleError = "Spotify could not add the track to the playlist. Please check the playlist and try again.";
+            return false;
         }
     }
 
-    public async Task AddTrackToLibraryAsync(string trackId, string trackFriendlyName,
+    public async Task<bool> AddTrackToLibraryAsync(string trackId, string trackFriendlyName,
         CancellationToken cancellationToken)
     {
         if (!await EnsureValidSpotifyClient(cancellationToken) || _spotifyClient == null)
         {
             logger.LogError("Spotify client not valid. Cannot save track to library.");
-            return;
+            return false;
         }
 
         try
@@ -551,10 +717,19 @@ public class SpotifyManager(
                 new LibrarySaveTracksRequest([trackId]), cancellationToken);
 
             logger.LogInformation("Track {TrackFriendlyName} added to Liked Songs.", trackFriendlyName);
+            ClearUserVisibleError();
+            return true;
+        }
+        catch (APIException ex)
+        {
+            SetSpotifyApiError(ex, "save track to Liked Songs");
+            return false;
         }
         catch (Exception ex)
         {
             logger.LogError("Failed to save track to library: {ExMessage}", ex.Message);
+            LastUserVisibleError = "Spotify could not save the track to Liked Songs. Please try again.";
+            return false;
         }
     }
 
@@ -568,32 +743,54 @@ public class SpotifyManager(
             return deviceMap;
         }
 
-        var response = await _spotifyClient.Player.GetAvailableDevices(cancellationToken);
-        if (response.Devices.Count > 0)
+        try
         {
-            foreach (var device in response.Devices)
+            var response = await _spotifyClient.Player.GetAvailableDevices(cancellationToken);
+            if (response.Devices.Count > 0)
             {
-                deviceMap[device.Name] = device.Id;
+                foreach (var device in response.Devices)
+                {
+                    if (string.IsNullOrEmpty(device.Name) || string.IsNullOrEmpty(device.Id))
+                        continue;
+
+                    deviceMap[device.Name] = device.Id;
+                }
+                ClearUserVisibleError();
+            }
+            else
+            {
+                logger.LogWarning("No devices available.");
+                LastUserVisibleError = NoActiveDeviceMessage;
             }
         }
-        else
+        catch (APIException ex)
         {
-            logger.LogWarning("No devices available.");
+            SetSpotifyApiError(ex, "list available devices");
         }
 
         return deviceMap;
     }
 
-    public async Task TransferPlayback(string deviceId, CancellationToken cancellationToken)
+    public async Task<bool> TransferPlayback(string deviceId, CancellationToken cancellationToken)
     {
         if (!await EnsureValidSpotifyClient(cancellationToken) || _spotifyClient == null)
         {
             logger.LogError("Spotify client not valid. Cannot transfer playback.");
-            return;
+            return false;
         }
 
-        await _spotifyClient.Player.TransferPlayback(new PlayerTransferPlaybackRequest(new List<string> { deviceId }), cancellationToken);
-        logger.LogInformation("Playback transferred to device: {DeviceId}", deviceId);
+        try
+        {
+            await _spotifyClient.Player.TransferPlayback(new PlayerTransferPlaybackRequest(new List<string> { deviceId }), cancellationToken);
+            logger.LogInformation("Playback transferred to device: {DeviceId}", deviceId);
+            ClearUserVisibleError();
+            return true;
+        }
+        catch (APIException ex)
+        {
+            SetSpotifyApiError(ex, "transfer playback");
+            return false;
+        }
     }
 
     private async Task<bool> EnsureValidSpotifyClient(CancellationToken cancellationToken)
@@ -603,12 +800,14 @@ public class SpotifyManager(
         if (newToken == null)
         {
             logger.LogError("Unable to refresh access token. Spotify client cannot be used.");
+            SetAuthorizationRequired();
             return false;
         }
 
         if (_spotifyAuthToken == null)
         {
-            throw new InvalidOperationException("_spotifyAuthToken null");
+            SetAuthorizationRequired();
+            return false;
         }
 
         if (_spotifyClient == null || _spotifyAuthToken.AccessToken != newToken)
@@ -617,5 +816,42 @@ public class SpotifyManager(
         }
 
         return true;
+    }
+
+    private void ClearUserVisibleError()
+    {
+        LastUserVisibleError = null;
+        IsAuthorizationRequired = false;
+    }
+
+    private void SetAuthorizationRequired()
+    {
+        IsAuthorizationRequired = true;
+        LastUserVisibleError = AuthorizationRequiredMessage;
+    }
+
+    private void SetSpotifyApiError(APIException ex, string operation)
+    {
+        logger.LogWarning(ex, "Spotify API failed while trying to {Operation}.", operation);
+
+        var message = ex.Message;
+        if (message.Contains("401", StringComparison.OrdinalIgnoreCase) ||
+            message.Contains("unauthorized", StringComparison.OrdinalIgnoreCase) ||
+            message.Contains("invalid token", StringComparison.OrdinalIgnoreCase))
+        {
+            _spotifyClient = null;
+            SetAuthorizationRequired();
+            return;
+        }
+
+        if (message.Contains("404", StringComparison.OrdinalIgnoreCase) ||
+            message.Contains("no active device", StringComparison.OrdinalIgnoreCase) ||
+            message.Contains("device", StringComparison.OrdinalIgnoreCase))
+        {
+            LastUserVisibleError = NoActiveDeviceMessage;
+            return;
+        }
+
+        LastUserVisibleError = $"Spotify could not {operation}. Please check Spotify and try again.";
     }
 }

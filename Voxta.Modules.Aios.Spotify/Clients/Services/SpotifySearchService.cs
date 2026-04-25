@@ -33,7 +33,16 @@ public class SpotifySearchService(ISpotifyManager spotifyManager, ILogger<Spotif
         //_spotifyManager.SearchSpotify(nameString, SearchRequest.Types.Audiobooks, _userMarket) # not working yet
         };
 
-        var searchResponses = await Task.WhenAll(searchTasks);
+        SearchResponse?[] searchResponses;
+        try
+        {
+            searchResponses = await Task.WhenAll(searchTasks);
+        }
+        catch (Exception ex)
+        {
+            logger.LogError(ex, "Spotify search failed.");
+            return (null, null, null);
+        }
         var candidates = new List<(string Uri, string FriendlyName, string Type, int Popularity, int Priority, bool IsOfficial)>();
 
         var extractors = new Dictionary<int, Action<SearchResponse?>>

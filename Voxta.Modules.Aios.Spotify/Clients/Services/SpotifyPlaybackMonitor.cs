@@ -42,7 +42,14 @@ public class SpotifyPlaybackMonitor(
                 
                 if (connectionChanged)
                 {
-                    if (isConnected)
+                    if (spotifyManager.IsAuthorizationRequired)
+                    {
+                        logger.LogInformation("Spotify authorization is required.");
+                        await SendWithPrefixAsync(spotifyManager.LastUserVisibleError ?? "Spotify authorization is required. Please authorize Spotify again.", cancellationToken);
+                        flags.Add("!spotify_connected");
+                        flags.Add("spotify_disconnected");
+                    }
+                    else if (isConnected)
                     {
                         logger.LogInformation("Spotify is now connected and active.");
                         await SendWithPrefixAsync("Spotify is now connected and active.", cancellationToken);
