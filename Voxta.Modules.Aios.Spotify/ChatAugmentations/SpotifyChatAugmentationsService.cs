@@ -1,6 +1,5 @@
 using Microsoft.Extensions.Logging;
 using Voxta.Abstractions.Chats.Sessions;
-using Voxta.Abstractions.Configuration;
 using Voxta.Abstractions.Encryption;
 using Voxta.Abstractions.Security;
 using Voxta.Abstractions.Services;
@@ -15,8 +14,7 @@ namespace Voxta.Modules.Aios.Spotify.ChatAugmentations;
 public class SpotifyChatAugmentationsService(
     ILocalEncryptionProvider localEncryptionProvider,
     ISpotifyManagerFactory spotifyManagerFactory,
-    ILoggerFactory loggerFactory,
-    IServicesConfigurationsSetResolver servicesConfigurationsSetResolver
+    ILoggerFactory loggerFactory
 ) : ServiceBase(loggerFactory.CreateLogger<SpotifyChatAugmentationsService>()), IChatAugmentationsService
 {
     public async Task<IChatAugmentationServiceInstanceBase[]> CreateInstanceAsync(
@@ -50,8 +48,7 @@ public class SpotifyChatAugmentationsService(
         var config = new SpotifyChatAugmentationsSettings
         {
             MatchFilterWakeWord = ModuleConfiguration.GetOptional(ModuleConfigurationProvider.MatchFilterWakeWord),
-            EnableMatchFilter = ModuleConfiguration.GetRequired(ModuleConfigurationProvider.EnableMatchFilter),
-            EnableVolumeControlDuringSpeech = ModuleConfiguration.GetRequired(ModuleConfigurationProvider.EnableVolumeControlDuringSpeech),
+            SpeechDuckingVolumePercent = ModuleConfiguration.GetRequired(ModuleConfigurationProvider.SpeechDuckingVolumePercent),
             EnableCharacterReplies = ModuleConfiguration.GetRequired(ModuleConfigurationProvider.EnableCharacterReplies),
             SpecialPlaylists = playlistMap
         };
@@ -80,8 +77,7 @@ public class SpotifyChatAugmentationsService(
             session,
             config,
             spotifyPlaybackMonitor,
-            spotifyActionHandler,
-            servicesConfigurationsSetResolver
+            spotifyActionHandler
         );
         try
         {

@@ -23,7 +23,7 @@ public class SpotifyActionHandler(
     private Dictionary<string, string> _playlistMap = new();
     private int? _lastKnownVolume;
     
-    public Task LowerVolumeAsync(CancellationToken cancellationToken) => FadeVolumeAsync(40, cancellationToken);
+    public Task LowerVolumeAsync(CancellationToken cancellationToken) => FadeVolumeAsync(settings.SpeechDuckingVolumePercent, cancellationToken);
     public async Task RestoreVolumeAsync(CancellationToken cancellationToken)
     {
         if (_lastKnownVolume.HasValue)
@@ -275,6 +275,9 @@ public class SpotifyActionHandler(
     
     private async Task FadeVolumeAsync(int targetVolume, CancellationToken cancellationToken)
     {
+        targetVolume = Math.Clamp(targetVolume, 0, 100);
+        if (targetVolume >= 100) return;
+
         var playbackState = getPlaybackState();
         if (playbackState?.Device?.Id == null) return;
         

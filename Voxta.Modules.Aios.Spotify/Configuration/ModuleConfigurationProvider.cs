@@ -36,36 +36,33 @@ public class ModuleConfigurationProvider : ModuleConfigurationProviderBase, IMod
         DefaultValue = "http://127.0.0.1:5384/api/extensions/spotify/oauth2/callback"
     };
 
-    public static readonly FormBooleanField EnableMatchFilter = new()
-    {
-        Name = "EnableMatchFilter",
-        Label = "Enable Match Filter",
-        Text = "Enable match filter to only activate the augmentation when a specific wake word is detected.",
-        DefaultValue = true
-    };
-
     public static readonly FormTextField MatchFilterWakeWord = new()
     {
         Name = "MatchFilterWakeWord",
-        Label = "Match Filter Wake Word",
+        Label = "Wake Word",
         Required = false,
-        Text = "The wake word to activate the augmentation when match filter is enabled.",
+        Text = "Optional wake word required before Spotify commands. Leave empty to match Spotify commands directly.",
         DefaultValue = ""
     };
 
-    public static readonly FormBooleanField EnableVolumeControlDuringSpeech = new()
+    public static readonly FormIntSliderField SpeechDuckingVolumePercent = new()
     {
-        Name = "EnableVolumeControlDuringSpeech",
-        Label = "Volume Control During Speech",
-        Text = "Lower Spotify volume when speech or transcription is active.",
-        DefaultValue = true
+        Name = "SpeechDuckingVolumePercent",
+        Label = "Speech Ducking Volume",
+        Text = "Spotify volume while speech or transcription is active. Set to 100 to disable volume ducking.",
+        Min = 0,
+        Max = 100,
+        SoftMin = 0,
+        SoftMax = 100,
+        Step = 1,
+        DefaultValue = 60
     };
 
     public static readonly FormBooleanField EnableCharacterReplies = new()
     {
         Name = "EnableCharacterReplies",
         Label = "Enable Character Replies",
-        Text = "Enable character replies to allow the augmentation to respond as the character.",
+        Text = "Enable character replies to actions performed by the module.",
         DefaultValue = false
     };
 
@@ -107,9 +104,8 @@ Daily Mix 6="
             ClientId,
             ClientSecret,
             RedirectUri,
-            EnableMatchFilter,
             MatchFilterWakeWord,
-            EnableVolumeControlDuringSpeech,
+            SpeechDuckingVolumePercent,
             EnableCharacterReplies,
             SpecialPlaylists,
             TokenPath
