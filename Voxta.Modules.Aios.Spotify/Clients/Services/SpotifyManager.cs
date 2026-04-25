@@ -75,7 +75,6 @@ public interface ISpotifyManager
     Task<bool> QueueTrack(string uri, CancellationToken cancellationToken);
     Task<SearchResponse?> SearchSpotify(string query, SearchRequest.Types type, string? market = null);
     Task<string?> GetSpotifyUserIdAsync();
-    Task<string?> GetUserMarketAsync();
     Task<bool> ChangeVolume(int volumePercent, CancellationToken cancellationToken);
     Task<bool> SkipToPreviousOrNextTrack(string skipToPrevious, CancellationToken cancellationToken);
     Task<bool> SeekPlayback(int positionMs, CancellationToken cancellationToken);
@@ -83,7 +82,7 @@ public interface ISpotifyManager
     Task<bool> SetRepeatMode(string repeatMode, CancellationToken cancellationToken);
     Task<Dictionary<string, string>> ListAvailablePlaylists(CancellationToken cancellationToken);
     Task<bool> AddItems(string playlistId, PlaylistAddItemsRequest request, CancellationToken cancellationToken);
-    Task<bool> AddTrackToLibraryAsync(string trackId, string trackFriendlyName, CancellationToken cancellationToken);
+    Task<bool> AddTrackToLibraryAsync(string trackUri, string trackFriendlyName, CancellationToken cancellationToken);
     Task<Dictionary<string, string>> ListAvailableDevices(CancellationToken cancellationToken);
     Task<bool> TransferPlayback(string deviceId, CancellationToken cancellationToken);
 }
@@ -431,7 +430,8 @@ public class SpotifyManager(
 
         var request = new SearchRequest(type, query)
         {
-            Market = market
+            Market = market,
+            Limit = 10
         };
 
         try
@@ -465,28 +465,6 @@ public class SpotifyManager(
         {
             logger.LogError(ex, "Failed to retrieve Spotify user ID.");
             SetSpotifyApiError(ex, "retrieve Spotify user profile");
-            return null;
-        }
-    }
-
-    public async Task<string?> GetUserMarketAsync()
-    {
-        if (_spotifyClient == null)
-        {
-            SetAuthorizationRequired();
-            return null;
-        }
-
-        try
-        {
-            var me = await _spotifyClient.UserProfile.Current();
-            logger.LogInformation("Retrieved user market: {MeCountry}", me.Country);
-            return me.Country;
-        }
-        catch (APIException ex)
-        {
-            logger.LogError(ex, "Failed to retrieve user profile for market detection.");
-            SetSpotifyApiError(ex, "retrieve Spotify user market");
             return null;
         }
     }
@@ -684,7 +662,7 @@ public class SpotifyManager(
 
         try
         {
-            await _spotifyClient.Playlists.AddItems(playlistId, request, cancellationToken);
+            await _spotifyClient.Playlists.AddPlaylistItems(playlistId, request, cancellationToken);
             logger.LogInformation("Track added to playlist: {PlaylistId}", playlistId);
             ClearUserVisibleError();
             return true;
@@ -702,7 +680,7 @@ public class SpotifyManager(
         }
     }
 
-    public async Task<bool> AddTrackToLibraryAsync(string trackId, string trackFriendlyName,
+    public async Task<bool> AddTrackToLibraryAsync(string trackUri, string trackFriendlyName,
         CancellationToken cancellationToken)
     {
         if (!await EnsureValidSpotifyClient(cancellationToken) || _spotifyClient == null)
@@ -713,8 +691,8 @@ public class SpotifyManager(
 
         try
         {
-            await _spotifyClient.Library.SaveTracks(
-                new LibrarySaveTracksRequest([trackId]), cancellationToken);
+            await _spotifyClient.Library.SaveItems(
+                new LibrarySaveItemsRequest([trackUri]), cancellationToken);
 
             logger.LogInformation("Track {TrackFriendlyName} added to Liked Songs.", trackFriendlyName);
             ClearUserVisibleError();

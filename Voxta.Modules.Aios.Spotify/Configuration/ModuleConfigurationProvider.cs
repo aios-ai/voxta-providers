@@ -16,7 +16,7 @@ public class ModuleConfigurationProvider : ModuleConfigurationProviderBase, IMod
         //language=markdown
         Text = "Get your Client ID from your Spotify Developer Dashboard at [developer.spotify.com](https://developer.spotify.com/dashboard/).",
     };
-    
+
     public static readonly FormPasswordField ClientSecret = new()
     {
         Name = "ClientSecret",
@@ -25,17 +25,17 @@ public class ModuleConfigurationProvider : ModuleConfigurationProviderBase, IMod
         //language=markdown
         Text = "Get your Client Secret from your Spotify Developer Dashboard at [developer.spotify.com](https://developer.spotify.com/dashboard/).",
     };
-    
+
     public static readonly FormTextField RedirectUri = new()
     {
         Name = "RedirectUri",
         Label = "Redirect URI",
         Required = true,
         //language=markdown
-        Text = "Set your Redirect URI in your Spotify Developer Dashboard at [developer.spotify.com](https://developer.spotify.com/dashboard/). It must match exactly.",
+        Text = "Set your Redirect URI in your Spotify Developer Dashboard at [developer.spotify.com](https://developer.spotify.com/dashboard/).",
         DefaultValue = "http://127.0.0.1:5384/api/extensions/spotify/oauth2/callback"
     };
-    
+
     public static readonly FormBooleanField EnableMatchFilter = new()
     {
         Name = "EnableMatchFilter",
@@ -43,7 +43,7 @@ public class ModuleConfigurationProvider : ModuleConfigurationProviderBase, IMod
         Text = "Enable match filter to only activate the augmentation when a specific wake word is detected.",
         DefaultValue = true
     };
-    
+
     public static readonly FormTextField MatchFilterWakeWord = new()
     {
         Name = "MatchFilterWakeWord",
@@ -52,7 +52,7 @@ public class ModuleConfigurationProvider : ModuleConfigurationProviderBase, IMod
         Text = "The wake word to activate the augmentation when match filter is enabled.",
         DefaultValue = ""
     };
-    
+
     public static readonly FormBooleanField EnableVolumeControlDuringSpeech = new()
     {
         Name = "EnableVolumeControlDuringSpeech",
@@ -60,7 +60,7 @@ public class ModuleConfigurationProvider : ModuleConfigurationProviderBase, IMod
         Text = "Lower Spotify volume when speech or transcription is active.",
         DefaultValue = true
     };
-    
+
     public static readonly FormBooleanField EnableCharacterReplies = new()
     {
         Name = "EnableCharacterReplies",
@@ -68,7 +68,7 @@ public class ModuleConfigurationProvider : ModuleConfigurationProviderBase, IMod
         Text = "Enable character replies to allow the augmentation to respond as the character.",
         DefaultValue = false
     };
-    
+
     public static readonly FormMultilineField SpecialPlaylists = new()
     {
         Name = "SpecialPlaylists",
@@ -76,7 +76,7 @@ public class ModuleConfigurationProvider : ModuleConfigurationProviderBase, IMod
         Required = false,
         Text = "You can map your algorithmic Spotify playlists here. Add one entry per line in the format: Name=PlaylistId (e.g. Release Radar=123abc).",
         Rows = 8,
-        DefaultValue = 
+        DefaultValue =
             @"Release Radar=
 Discover Weekly=
 Daily Mix 1=
@@ -86,7 +86,7 @@ Daily Mix 4=
 Daily Mix 5=
 Daily Mix 6="
     };
-    
+
     public static readonly FormTextField TokenPath = new()
     {
         Name = "TokenPath",

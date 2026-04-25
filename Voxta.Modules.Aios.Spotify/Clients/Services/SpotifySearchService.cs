@@ -7,13 +7,11 @@ namespace Voxta.Modules.Aios.Spotify.Clients.Services;
 public class SpotifySearchService(ISpotifyManager spotifyManager, ILogger<SpotifySearchService> logger)
 {
     private string? _currentUserId;
-    private string? _userMarket;
     private readonly Queue<string> _recentlyPlayedUris = new();
 
     public async Task InitializeAsync()
     {
         _currentUserId = await spotifyManager.GetSpotifyUserIdAsync();
-        _userMarket = await spotifyManager.GetUserMarketAsync();
     }
 
     public async Task<(string? Uri, string? FriendlyName, string? Type)> GetSpotifyUri(string nameString, string? requestedType = null, string? originalType = null)
@@ -21,17 +19,10 @@ public class SpotifySearchService(ISpotifyManager spotifyManager, ILogger<Spotif
         nameString = StringUtils.CleanString(nameString);
         logger.LogInformation("Searching for: {NameString}", nameString);
 
-        //var audiobookMarkets = new HashSet<string> { "US", "GB", "CA", "IE", "NZ", "AU" }; # Needed for audiobooks
-
-        var searchTasks = new List<Task<SearchResponse?>> {
-        spotifyManager.SearchSpotify(nameString, SearchRequest.Types.Track, _userMarket),
-        spotifyManager.SearchSpotify(nameString, SearchRequest.Types.Album, _userMarket),
-        spotifyManager.SearchSpotify(nameString, SearchRequest.Types.Artist, _userMarket),
-        spotifyManager.SearchSpotify(nameString, SearchRequest.Types.Playlist, _userMarket),
-        spotifyManager.SearchSpotify(nameString, SearchRequest.Types.Show, _userMarket),
-        spotifyManager.SearchSpotify(nameString, SearchRequest.Types.Episode, _userMarket),
-        //_spotifyManager.SearchSpotify(nameString, SearchRequest.Types.Audiobooks, _userMarket) # not working yet
-        };
+        var searches = BuildSearches(requestedType);
+        var searchTasks = searches
+            .Select(search => spotifyManager.SearchSpotify(nameString, search.SearchType, "from_token"))
+            .ToList();
 
         SearchResponse?[] searchResponses;
         try
@@ -43,42 +34,28 @@ public class SpotifySearchService(ISpotifyManager spotifyManager, ILogger<Spotif
             logger.LogError(ex, "Spotify search failed.");
             return (null, null, null);
         }
-        var candidates = new List<(string Uri, string FriendlyName, string Type, int Popularity, int Priority, bool IsOfficial)>();
+        var candidates = new List<SearchCandidate>();
 
-        var extractors = new Dictionary<int, Action<SearchResponse?>>
+        var extractors = new Dictionary<string, Action<SearchResponse?>>
         {
-            [0] = response =>
+            ["track"] = response =>
             {
+                var rank = 0;
                 foreach (var track in response?.Tracks?.Items ?? Enumerable.Empty<FullTrack>())
                 {
                     if (track?.Uri == null) continue;
 
-                    if (!string.IsNullOrEmpty(_userMarket) &&
-                        track.AvailableMarkets != null &&
-                        !track.AvailableMarkets.Contains(_userMarket))
-                    {
-                        logger.LogInformation("Skipping Track '{TrackName}' — not available in {UserMarket}", track.Name, _userMarket);
-                        continue;
-                    }
-
                     var artistNames = track.Artists?.Where(a => a != null).Select(a => a.Name ?? "Unknown Artist") ?? [];
                     var albumName = track.Album?.Name ?? "Unknown Album";
-                    candidates.Add((track.Uri, $"Track: {track.Name ?? "Unknown Track"} by {string.Join(", ", artistNames)} (Album: {albumName})", "track", track.Popularity, 2, false));
+                    candidates.Add(new SearchCandidate(track.Uri, $"Track: {track.Name ?? "Unknown Track"} by {string.Join(", ", artistNames)} (Album: {albumName})", "track", 0, 2, false, rank++));
                 }
             },
-            [1] = response =>
+            ["album"] = response =>
             {
+                var rank = 0;
                 foreach (var album in response?.Albums?.Items ?? Enumerable.Empty<SimpleAlbum>())
                 {
                     if (album?.Uri == null) continue;
-
-                    if (!string.IsNullOrEmpty(_userMarket) &&
-                        album.AvailableMarkets != null &&
-                        !album.AvailableMarkets.Contains(_userMarket))
-                    {
-                        logger.LogInformation("Skipping Album '{AlbumName}' — not available in {UserMarket}", album.Name, _userMarket);
-                        continue;
-                    }
 
                     var artistNames = album.Artists?.Where(a => a != null).Select(a => a.Name ?? "Unknown Artist") ?? [];
                     var recencyBoost = 0;
@@ -87,19 +64,21 @@ public class SpotifySearchService(ISpotifyManager spotifyManager, ILogger<Spotif
                         recencyBoost = (int)Math.Round(CalculateRecencyBoost(releaseDate));
                     }
 
-                    candidates.Add((album.Uri, $"Album: {album.Name ?? "Unknown Album"} by {string.Join(", ", artistNames)}", "album", recencyBoost, 1, false));
+                    candidates.Add(new SearchCandidate(album.Uri, $"Album: {album.Name ?? "Unknown Album"} by {string.Join(", ", artistNames)}", "album", recencyBoost, 1, false, rank++));
                 }
             },
-            [2] = response =>
+            ["artist"] = response =>
             {
+                var rank = 0;
                 foreach (var artist in response?.Artists?.Items ?? Enumerable.Empty<FullArtist>())
                 {
                     if (artist?.Uri == null) continue;
-                    candidates.Add((artist.Uri, $"Artist: {artist.Name ?? "Unknown Artist"}", "artist", artist.Popularity, 0, false));
+                    candidates.Add(new SearchCandidate(artist.Uri, $"Artist: {artist.Name ?? "Unknown Artist"}", "artist", 0, 0, false, rank++));
                 }
             },
-            [3] = response =>
+            ["playlist"] = response =>
             {
+                var rank = 0;
                 foreach (var playlist in response?.Playlists?.Items ?? Enumerable.Empty<FullPlaylist>())
                 {
                     if (playlist?.Uri == null) continue;
@@ -119,62 +98,46 @@ public class SpotifySearchService(ISpotifyManager spotifyManager, ILogger<Spotif
                         popularityBoost = originalType == "genre" ? -50 : 50;
                     }
 
-                    candidates.Add((playlist.Uri, $"Playlist: {playlist.Name ?? "Unknown Playlist"} by {ownerName}", "playlist", popularityBoost, 1, isOfficialSpotify));
+                    candidates.Add(new SearchCandidate(playlist.Uri, $"Playlist: {playlist.Name ?? "Unknown Playlist"} by {ownerName}", "playlist", popularityBoost, 1, isOfficialSpotify, rank++));
                 }
             },
-            [4] = response =>
+            ["show"] = response =>
             {
+                var rank = 0;
                 foreach (var show in response?.Shows?.Items ?? Enumerable.Empty<SimpleShow>())
                 {
                     if (show?.Uri == null) continue;
 
-                    if (!string.IsNullOrEmpty(_userMarket) &&
-                        show.AvailableMarkets != null &&
-                        !show.AvailableMarkets.Contains(_userMarket))
-                    {
-                        logger.LogInformation("Skipping Show '{ShowName}' — not available in {UserMarket}", show.Name, _userMarket);
-                        continue;
-                    }
-
-                    candidates.Add((show.Uri, $"Show: {show.Name ?? "Unknown Show"} by {show.Publisher ?? "Unknown Publisher"}", "show", 0, 1, false));
+                    candidates.Add(new SearchCandidate(show.Uri, $"Show: {show.Name ?? "Unknown Show"}", "show", 0, 1, false, rank++));
                 }
             },
-            [5] = response =>
+            ["episode"] = response =>
             {
+                var rank = 0;
                 foreach (var episode in response?.Episodes?.Items ?? Enumerable.Empty<SimpleEpisode>())
                 {
                     if (episode?.Uri == null) continue;
-                    candidates.Add((episode.Uri, $"Episode: {episode.Name ?? "Unknown Episode"}", "episode", 0, 2, false));
+                    candidates.Add(new SearchCandidate(episode.Uri, $"Episode: {episode.Name ?? "Unknown Episode"}", "episode", 0, 2, false, rank++));
                 }
             },
-            /*[6] = response =>
+            /*["audiobook"] = response =>
             {
+                var rank = 0;
                 foreach (var audiobook in response?.Audiobooks?.Items ?? Enumerable.Empty<FullAudiobook>())
                 {
                     if (audiobook?.Uri == null) continue;
 
-                    if (!string.IsNullOrEmpty(_userMarket) &&
-                        audiobook.AvailableMarkets != null &&
-                        !audiobook.AvailableMarkets.Contains(_userMarket))
-                    {
-                        _logger.LogInformation($"Skipping Audiobook '{audiobook.Name}' — not available in {_userMarket}");
-                        continue;
-                    }
-
                     var authorNames = audiobook.Authors?.Where(a => a != null).Select(a => a.Name ?? "Unknown Author") ?? Enumerable.Empty<string>();
-                    candidates.Add((audiobook.Uri, $"Audiobook: {audiobook.Name ?? "Unknown Audiobook"} by {string.Join(", ", authorNames)}", "audiobook", audiobook.Popularity, 1));
+                    candidates.Add(new SearchCandidate(audiobook.Uri, $"Audiobook: {audiobook.Name ?? "Unknown Audiobook"} by {string.Join(", ", authorNames)}", "audiobook", 0, 1, false, rank++));
                 }
             }*/
         };
 
         for (var i = 0; i < searchResponses.Length; i++)
         {
-            if (extractors.TryGetValue(i, out var extractor))
+            if (extractors.TryGetValue(searches[i].Type, out var extractor))
                 extractor(searchResponses[i]);
         }
-
-        if (!string.IsNullOrEmpty(requestedType))
-            candidates = candidates.Where(c => c.Type.Equals(requestedType, StringComparison.OrdinalIgnoreCase)).ToList();
 
         if (!candidates.Any())
         {
@@ -182,18 +145,14 @@ public class SpotifySearchService(ISpotifyManager spotifyManager, ILogger<Spotif
             return (null, null, null);
         }
 
-        if (requestedType != null)
-        {
-            candidates = candidates.Where(c => c.Type == requestedType).ToList();
-        }
-
-        logger.LogInformation("DEBUG: All candidates and their priorities: {Join}", string.Join("; ", candidates.Select(c => $"{c.FriendlyName} (Type: {c.Type}, Priority: {c.Priority}, Popularity: {c.Popularity})")));
+        logger.LogInformation("DEBUG: All candidates and their priorities: {Join}", string.Join("; ", candidates.Select(c => $"{c.FriendlyName} (Type: {c.Type}, Priority: {c.Priority}, Boost: {c.Boost}, SpotifyRank: {c.SpotifyRank})")));
 
         var orderedCandidates = candidates
             .OrderByDescending(c => c.Type == "playlist" && c.IsOfficial)
             .ThenByDescending(c => CalculateWordMatchScore(nameString, c.FriendlyName))
             .ThenByDescending(c => c.Priority)
-            .ThenByDescending(c => c.Popularity)
+            .ThenByDescending(c => c.Boost)
+            .ThenBy(c => c.SpotifyRank)
             .ToList();
 
         if (!orderedCandidates.Any())
@@ -205,12 +164,14 @@ public class SpotifySearchService(ISpotifyManager spotifyManager, ILogger<Spotif
         var topCandidate = orderedCandidates.First();
         var topScore = CalculateWordMatchScore(nameString, topCandidate.FriendlyName);
         var topPriority = topCandidate.Priority;
-        var topPopularity = topCandidate.Popularity;
+        var topBoost = topCandidate.Boost;
+        var topSpotifyRank = topCandidate.SpotifyRank;
 
         var tiedCandidates = orderedCandidates
             .Where(c => CalculateWordMatchScore(nameString, c.FriendlyName) == topScore
                      && c.Priority == topPriority
-                     && c.Popularity == topPopularity)
+                     && c.Boost == topBoost
+                     && c.SpotifyRank == topSpotifyRank)
             .ToList();
 
         var filteredTies = tiedCandidates
@@ -222,10 +183,31 @@ public class SpotifySearchService(ISpotifyManager spotifyManager, ILogger<Spotif
 
         var bestCandidate = tiedCandidates[new Random().Next(tiedCandidates.Count)];
 
-        logger.LogInformation("DEBUG: Best candidate selected: {BestCandidateFriendlyName} (Type: {BestCandidateType}, Priority: {BestCandidatePriority}, Popularity: {BestCandidatePopularity}, Score: {TopScore})", bestCandidate.FriendlyName, bestCandidate.Type, bestCandidate.Priority, bestCandidate.Popularity, topScore);
+        logger.LogInformation("DEBUG: Best candidate selected: {BestCandidateFriendlyName} (Type: {BestCandidateType}, Priority: {BestCandidatePriority}, Boost: {BestCandidateBoost}, SpotifyRank: {BestCandidateSpotifyRank}, Score: {TopScore})", bestCandidate.FriendlyName, bestCandidate.Type, bestCandidate.Priority, bestCandidate.Boost, bestCandidate.SpotifyRank, topScore);
 
+        AddToHistory(bestCandidate.Uri);
         return (bestCandidate.Uri, bestCandidate.FriendlyName, bestCandidate.Type);
 
+    }
+
+    private static List<(string Type, SearchRequest.Types SearchType)> BuildSearches(string? requestedType)
+    {
+        var allSearches = new List<(string Type, SearchRequest.Types SearchType)>
+        {
+            ("track", SearchRequest.Types.Track),
+            ("album", SearchRequest.Types.Album),
+            ("artist", SearchRequest.Types.Artist),
+            ("playlist", SearchRequest.Types.Playlist),
+            ("show", SearchRequest.Types.Show),
+            ("episode", SearchRequest.Types.Episode)
+        };
+
+        if (string.IsNullOrEmpty(requestedType))
+            return allSearches;
+
+        return allSearches
+            .Where(search => search.Type.Equals(requestedType, StringComparison.OrdinalIgnoreCase))
+            .ToList();
     }
 
     private int CalculateWordMatchScore(string searchString, string friendlyName)
@@ -305,4 +287,6 @@ public class SpotifySearchService(ISpotifyManager spotifyManager, ILogger<Spotif
 
         _recentlyPlayedUris.Enqueue(uri);
     }
+
+    private sealed record SearchCandidate(string Uri, string FriendlyName, string Type, int Boost, int Priority, bool IsOfficial, int SpotifyRank);
 }

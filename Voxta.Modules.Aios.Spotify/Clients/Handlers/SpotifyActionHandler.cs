@@ -431,16 +431,9 @@ public class SpotifyActionHandler(
             return;
         }
 
-        var trackId = StringUtils.ExtractIdFromUri(trackUri);
-        if (string.IsNullOrEmpty(trackId))
-        {
-            await SendWithPrefix("Could not extract track ID from current track.", cancellationToken);
-            return;
-        }
-
         try
         {
-            if (await spotifyManager.AddTrackToLibraryAsync(trackId, trackFriendlyName, cancellationToken))
+            if (await spotifyManager.AddTrackToLibraryAsync(trackUri, trackFriendlyName, cancellationToken))
                 await SendWithPrefix($"Track '{trackFriendlyName}' added to your Favorites.", cancellationToken);
             else
                 await SendSpotifyFailureOrDefault("Failed to add track to Favorites.", cancellationToken);
