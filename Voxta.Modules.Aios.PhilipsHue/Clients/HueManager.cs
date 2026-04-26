@@ -1,3 +1,4 @@
+using HueApi.Models;
 using Microsoft.Extensions.Logging;
 
 namespace Voxta.Modules.Aios.PhilipsHue.Clients;
@@ -58,4 +59,10 @@ public class HueManager
     {
         await _commandService.ControlAllLightsAsync(turnOn);
     }
+
+    public IList<Light> GetLights() => _dataService.Lights;
+    public IList<GroupedLight> GetGroups() => _dataService.Groups;
+    public IList<Room> GetRooms() => _dataService.Rooms;
+    public IList<Zone> GetZones() => _dataService.Zones;
+    public IList<Scene> GetScenes() => _dataService.Scenes;
 }

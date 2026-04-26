@@ -8,13 +8,14 @@ using Voxta.Model.Shared;
 using Voxta.Model.WebsocketMessages.ClientMessages;
 using Voxta.Model.WebsocketMessages.ServerMessages;
 using Voxta.Modules.Aios.PhilipsHue.Clients;
+using System.Text.Json;
 
 namespace Voxta.Modules.Aios.PhilipsHue.ChatAugmentations;
 
 public class PhilipsHueChatAugmentationsServiceInstance(
     IChatSessionChatAugmentationApi session,
     HueManager hue,
-    PhilipsHueChatAugmentationsSettings philipsHueChatAugmentationsSettings,
+    PhilipsHueChatAugmentationsSettings philipsHueChatAugmentationsServiceInstance,
     ILogger<PhilipsHueChatAugmentationsServiceInstance> logger
 ) : IActionInferenceAugmentation, IChatPreProcessAugmentation
 {
@@ -39,30 +40,19 @@ public class PhilipsHueChatAugmentationsServiceInstance(
                 SetFlags = hue.IsConnected ? ["hueBridge_connected", "!hueBridge_disconnected"] : ["hueBridge_disconnected", "!hueBridge_connected"],
                 Actions =
                 [
-                    // Example action
                     new()
                     {
-                        // The name used by the LLM to select the action. Make sure to select a clear name.
                         Name = "turn_lights_on",
-                        // Layers allow you to run your actions separately from the scene
                         Layer = "HueControl",
-                        // A short description of the action to be included in the functions list, typically used for character action inference
                         ShortDescription = "turn on lights",
-                        // The condition for executing this function
                         Description = "When {{ user }} asks to turn on a light, a light-group, room or zone.",
                         /*Effect = new ActionEffect
                         {
                             Secret = "{{ char }} turned on the light.",
                         },*/
-                        // This match will ensure user action inference is only going to be triggered if this regex matches the message.
-                        // For example, if you use "please" in all functions, this can avoid running user action inference at all unless
-                        // the user said "please".
                         //MatchFilter = [@"\b(?:toggle|change|set|activate|light|lights|room|zone)\b"],
-                        // Only available when the specific flag is set
                         FlagsFilter = "hueBridge_connected",
-                        // Only run in response to the user messages 
                         Timing = FunctionTiming.AfterUserMessage,
-                        // Do not generate a response, we will instead handle the action ourselves
                         CancelReply = true,
                         Arguments =
                         [
@@ -116,7 +106,7 @@ public class PhilipsHueChatAugmentationsServiceInstance(
                         Layer = "HueControl",
                         ShortDescription = "change color",
                         Description = "When {{ user }} asks to change the light color.",
-                        //MatchFilter = [@"\b(?:change|set|activate|light|lights|room|zone|color|colour)\b"],
+                        //MatchFilter = [@"\b(?:toggle|change|set|activate|light|lights|room|zone|color|colour)\b"],
                         FlagsFilter = "hueBridge_connected",
                         Timing = FunctionTiming.AfterUserMessage,
                         CancelReply = true,
@@ -160,7 +150,7 @@ public class PhilipsHueChatAugmentationsServiceInstance(
                                 Description = "PascalCase color name {{ char }} wants to change to."
                             }
                         ],
-                        Disabled = philipsHueChatAugmentationsSettings.CharacterControlledLight == null
+                        Disabled = philipsHueChatAugmentationsServiceInstance.CharacterControlledLight == null
                     },
                     new()
                     {
@@ -168,7 +158,7 @@ public class PhilipsHueChatAugmentationsServiceInstance(
                         Layer = "HueControl",
                         ShortDescription = "change brightness or saturation",
                         Description = "When {{ user }} asks to change the brightness or saturation.",
-                        //MatchFilter = [@"\b(?:change|set|activate|light|lights|room|zone|brightness)\b"],
+                        //MatchFilter = [@"\b(?:toggle|change|set|activate|light|lights|room|zone|brightness)\b"],
                         FlagsFilter = "hueBridge_connected",
                         Timing = FunctionTiming.AfterUserMessage,
                         CancelReply = true,
@@ -218,6 +208,26 @@ public class PhilipsHueChatAugmentationsServiceInstance(
                                 Type = FunctionArgumentType.String,
                                 Required = true,
                                 Description = "Name od the scene {{ user }} asked to activate."
+                            }
+                        ]
+                    },
+                    new()
+                    {
+                        Name = "show_available_types",
+                        Layer = "HueControl",
+                        ShortDescription = "show available lights, groups, rooms, zones or scenes",
+                        Description = "When {{ user }} asks to list available lights, groups, rooms, zones or scenes.",
+                        FlagsFilter = "hueBridge_connected",
+                        Timing = FunctionTiming.AfterUserMessage,
+                        CancelReply = true,
+                        Arguments =
+                        [
+                            new FunctionArgumentDefinition
+                            {
+                                Name = "type",
+                                Type = FunctionArgumentType.String,
+                                Required = true,
+                                Description = "The type of objects to list, e.g., 'lights', 'groups', 'rooms', 'zones', or 'scenes'."
                             }
                         ]
                     }
@@ -420,7 +430,7 @@ public class PhilipsHueChatAugmentationsServiceInstance(
                 logger.LogInformation("Hex {HexCodeEmotion}", hexCodeEmotion);
 
                 var (targetIdEmotion, typeEmotion, matchedNameEmotion) =
-                    hue.MatchTargetToId(philipsHueChatAugmentationsSettings.CharacterControlledLight);
+                    hue.MatchTargetToId(philipsHueChatAugmentationsServiceInstance.CharacterControlledLight);
 
                 logger.LogInformation(
                     "Target '{MatchedNameEmotion}' matched to {TypeEmotion} with ID '{TargetIdEmotion}'.", matchedNameEmotion, typeEmotion, targetIdEmotion);
@@ -428,6 +438,55 @@ public class PhilipsHueChatAugmentationsServiceInstance(
                 await hue.SendHueCommandAsync((Guid)targetIdEmotion!, typeEmotion!, state: true, color: hexCodeEmotion);
 
                 await SendMessage($"/note {{{{ char }}}} changed the light color of {matchedNameEmotion} to {colorEmotion}", cancellationToken);
+                return true;
+            case "show_available_types":
+                if (!serverActionMessage.TryGetArgument("type", out var typeName) || string.IsNullOrEmpty(typeName))
+                {
+                    await SendMessage("/event No type specified. Please specify 'lights', 'groups', 'rooms', 'zones', or 'scenes'.", cancellationToken);
+                    return true;
+                }
+
+                typeName = CleanString(typeName!).ToLowerInvariant();
+                object? itemToSerialize = null;
+                string responseHeader = "";
+
+                switch (typeName)
+                {
+                    case "lights":
+                        itemToSerialize = hue.GetLights().FirstOrDefault();
+                        responseHeader = "First available light object:";
+                        break;
+                    case "groups":
+                        itemToSerialize = hue.GetGroups().FirstOrDefault();
+                        responseHeader = "First available group object:";
+                        break;
+                    case "rooms":
+                        itemToSerialize = hue.GetRooms().FirstOrDefault();
+                        responseHeader = "First available room object:";
+                        break;
+                    case "zones":
+                        itemToSerialize = hue.GetZones().FirstOrDefault();
+                        responseHeader = "First available zone object:";
+                        break;
+                    case "scenes":
+                        itemToSerialize = hue.GetScenes().FirstOrDefault();
+                        responseHeader = "First available scene object:";
+                        break;
+                    default:
+                        await SendMessage($"/event Unknown type '{typeName}'. Please specify 'lights', 'groups', 'rooms', 'zones', or 'scenes'.", cancellationToken);
+                        return true;
+                }
+
+                if (itemToSerialize != null)
+                {
+                    var options = new JsonSerializerOptions { WriteIndented = true };
+                    var json = JsonSerializer.Serialize(itemToSerialize, options);
+                    await SendMessage($"/note {responseHeader}\n```json\n{json}\n```", cancellationToken);
+                }
+                else
+                {
+                    await SendMessage($"/note No {typeName} found in your network.", cancellationToken);
+                }
                 return true;
             default:
                 return false;
