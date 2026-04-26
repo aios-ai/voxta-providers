@@ -59,6 +59,9 @@ public class PhilipsHueChatAugmentationsService(
             loggerFactory.CreateLogger<HueManager>());
         
         await manager.InitializeAsync(cancellationToken);
-        return new PhilipsHueChatAugmentationsServiceInstance(session, manager, config, logger);
+
+        var instance = new PhilipsHueChatAugmentationsServiceInstance(session, manager, config, logger);
+        await instance.SendHueInventoryNoteAsync(cancellationToken);
+        return instance;
     }
 }

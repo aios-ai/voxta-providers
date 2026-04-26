@@ -1,4 +1,5 @@
 using System.Globalization;
+using System.Text;
 using System.Text.RegularExpressions;
 using Microsoft.Extensions.Logging;
 using Voxta.Abstractions.Chats.Sessions;
@@ -8,7 +9,6 @@ using Voxta.Model.Shared;
 using Voxta.Model.WebsocketMessages.ClientMessages;
 using Voxta.Model.WebsocketMessages.ServerMessages;
 using Voxta.Modules.Aios.PhilipsHue.Clients;
-using System.Text.Json;
 
 namespace Voxta.Modules.Aios.PhilipsHue.ChatAugmentations;
 
@@ -213,27 +213,25 @@ public class PhilipsHueChatAugmentationsServiceInstance(
                     },
                     new()
                     {
-                        Name = "show_available_types",
+                        Name = "show_hue_inventory",
                         Layer = "HueControl",
                         ShortDescription = "show available lights, groups, rooms, zones or scenes",
-                        Description = "When {{ user }} asks to list available lights, groups, rooms, zones or scenes.",
+                        Description = "When {{ user }} asks to list available Philips Hue lights, groups, rooms, zones or scenes.",
                         FlagsFilter = "hueBridge_connected",
                         Timing = FunctionTiming.AfterUserMessage,
                         CancelReply = true,
-                        Arguments =
-                        [
-                            new FunctionArgumentDefinition
-                            {
-                                Name = "type",
-                                Type = FunctionArgumentType.String,
-                                Required = true,
-                                Description = "The type of objects to list, e.g., 'lights', 'groups', 'rooms', 'zones', or 'scenes'."
-                            }
-                        ]
                     }
                 ]
             }
         ];
+    }
+
+    public Task SendHueInventoryNoteAsync(CancellationToken cancellationToken)
+    {
+        if (!hue.IsConnected)
+            return Task.CompletedTask;
+
+        return SendNoteOnly(BuildHueInventoryNote(), cancellationToken);
     }
 
     public async ValueTask<bool> TryHandleActionInference(
@@ -249,282 +247,236 @@ public class PhilipsHueChatAugmentationsServiceInstance(
 
         try
         {
-        switch (serverActionMessage.Value)
-        {
-            case "hueBridge_connect":
-                await SendMessage(hue.LastUserVisibleError ?? "No connection to the Hue bridge could be made. Ensure you are on the same network and try again.", cancellationToken);
-                return true;
-            case "turn_lights_on":
-                if (!serverActionMessage.TryGetArgument("target", out var targetOnName) ||
-                    string.IsNullOrEmpty(targetOnName))
-                {
-                    targetOnName = null;
-                }
-
-                targetOnName = CleanString(targetOnName);
-
-                var (targetIdOn, typeOn, matchedNameOn) = hue.MatchTargetToId(targetOnName);
-
-                if (targetIdOn == null || typeOn == null)
-                {
-                    logger.LogInformation($"No matching target found, turning on all lights.");
-                    if (await hue.ControlAllLightsAsync(true))
-                        await SendMessage("All Hue lights were turned on.", cancellationToken);
-                    else
-                        await SendHueFailureOrDefault("Hue could not turn on all lights.", cancellationToken);
+            switch (serverActionMessage.Value)
+            {
+                case "hueBridge_connect":
+                    await SendMessage(hue.LastUserVisibleError ?? "No connection to the Hue bridge could be made. Ensure you are on the same network and try again.", cancellationToken);
                     return true;
-                }
+                case "turn_lights_on":
+                    if (!serverActionMessage.TryGetArgument("target", out var targetOnName) ||
+                        string.IsNullOrEmpty(targetOnName))
+                    {
+                        targetOnName = null;
+                    }
 
-                logger.LogInformation("Target '{MatchedNameOn}' matched to {TypeOn} with ID '{TargetIdOn}'.", matchedNameOn, typeOn, targetIdOn);
+                    targetOnName = CleanString(targetOnName);
 
-                if (await hue.SendHueCommandAsync((Guid)targetIdOn, typeOn, state: true))
-                    await SendMessage($"Hue turned on {matchedNameOn ?? targetOnName}.", cancellationToken);
-                else
-                    await SendHueFailureOrDefault($"Hue could not turn on {matchedNameOn ?? targetOnName}.", cancellationToken);
-                return true;
-            case "turn_lights_off":
-                if (!serverActionMessage.TryGetArgument("target", out var targetOffName) ||
-                    string.IsNullOrEmpty(targetOffName))
-                {
-                    targetOffName = null;
-                }
+                    var (targetIdOn, typeOn, matchedNameOn) = hue.MatchTargetToId(targetOnName);
 
-                targetOffName = CleanString(targetOffName!);
-
-                var (targetIdOff, typeOff, matchedNameOff) = hue.MatchTargetToId(targetOffName);
-
-                if (targetIdOff == null || typeOff == null)
-                {
-                    logger.LogInformation($"No matching target found, turning off all lights.");
-                    if (await hue.ControlAllLightsAsync(false))
-                        await SendMessage("All Hue lights were turned off.", cancellationToken);
-                    else
-                        await SendHueFailureOrDefault("Hue could not turn off all lights.", cancellationToken);
-                    return true;
-                }
-
-                logger.LogInformation("Target '{MatchedNameOff}' matched to {TypeOff} with ID '{TargetIdOff}'.", matchedNameOff, typeOff, targetIdOff);
-
-                if (await hue.SendHueCommandAsync((Guid)targetIdOff, typeOff, state: false))
-                    await SendMessage($"Hue turned off {matchedNameOff ?? targetOffName}.", cancellationToken);
-                else
-                    await SendHueFailureOrDefault($"Hue could not turn off {matchedNameOff ?? targetOffName}.", cancellationToken);
-                return true;
-            case "change_color":
-                if (!serverActionMessage.TryGetArgument("target", out var targetNameColor) ||
-                    string.IsNullOrEmpty(targetNameColor))
-                {
-                    await SendMessage("/event No target specified.", cancellationToken);
-                    targetNameColor = null;
-                }
-
-                targetNameColor = CleanString(targetNameColor!);
-
-                var (targetIdColor, typeColor, matchedNameColor) = hue.MatchTargetToId(targetNameColor);
-
-                if (targetIdColor == null || typeColor == null)
-                {
-                    logger.LogWarning("No matching target found for '{TargetNameColor}'.", targetNameColor);
-                    hue.SetNoActiveTarget($"No Hue light, room, or zone matched '{targetNameColor}'.");
-                    await SendHueFailureOrDefault($"No Hue light, room, or zone matched '{targetNameColor}'.", cancellationToken);
-                    return true;
-                }
-
-                logger.LogInformation("Target '{MatchedNameColor}' matched to {TypeColor} with ID '{TargetIdColor}'.", matchedNameColor, typeColor, targetIdColor);
-
-                if (!serverActionMessage.TryGetArgument("color", out var colorName) || string.IsNullOrEmpty(colorName))
-                {
-                    await SendMessage("/event No Color specified.", cancellationToken);
-                    return true;
-                }
-
-                colorName = CleanStringPascalCase(colorName);
-                logger.LogInformation("PascalCase Color: {ColorName}", colorName);
-
-                var hexCode = hue.TranslateColorNameToHex(colorName);
-                logger.LogInformation("Hex: {HexCode}", hexCode);
-
-                if (string.IsNullOrWhiteSpace(hexCode))
-                {
-                    await SendMessage($"Hue does not know the color '{colorName}'.", cancellationToken);
-                    return true;
-                }
-
-                if (await hue.SendHueCommandAsync((Guid)targetIdColor, typeColor, state: true, color: hexCode))
-                    await SendMessage($"Hue changed {matchedNameColor ?? targetNameColor} to {colorName}.", cancellationToken);
-                else
-                    await SendHueFailureOrDefault($"Hue could not change {matchedNameColor ?? targetNameColor} to {colorName}.", cancellationToken);
-                return true;
-            case "change_brightness":
-                if (!serverActionMessage.TryGetArgument("target", out var targetNameBrightness) ||
-                    string.IsNullOrEmpty(targetNameBrightness))
-                {
-                    await SendMessage("/event No target specified.", cancellationToken);
-                    targetNameBrightness = null;
-                }
-
-                targetNameBrightness = CleanString(targetNameBrightness!);
-
-                var (targetIdBrightness, typeBrightness, matchedNameBrightness) = hue.MatchTargetToId(targetNameBrightness);
-
-                if (targetIdBrightness == null || typeBrightness == null)
-                {
-                    logger.LogWarning("No matching target found for '{TargetNameBrightness}'.", targetNameBrightness);
-                    hue.SetNoActiveTarget($"No Hue light, room, or zone matched '{targetNameBrightness}'.");
-                    await SendHueFailureOrDefault($"No Hue light, room, or zone matched '{targetNameBrightness}'.", cancellationToken);
-                    return true;
-                }
-
-                if (!serverActionMessage.TryGetArgument("brightness", out var brightness) ||
-                    !int.TryParse(brightness, out var brightnessLevel))
-                    brightnessLevel = 100;
-
-                logger.LogInformation(
-                    "Target '{MatchedNameBrightness}' matched to {TypeBrightness} with ID '{TargetIdBrightness}'.", matchedNameBrightness, typeBrightness, targetIdBrightness);
-
-                if (await hue.SendHueCommandAsync((Guid)targetIdBrightness, typeBrightness, state: true,
-                        brightness: brightnessLevel))
-                    await SendMessage($"Hue changed the brightness of {matchedNameBrightness} to {brightnessLevel}.", cancellationToken);
-                else
-                    await SendHueFailureOrDefault($"Hue could not change the brightness of {matchedNameBrightness}.", cancellationToken);
-                return true;
-            case "activate_scene":
-                if (!serverActionMessage.TryGetArgument("target", out var targetNameScene) ||
-                    string.IsNullOrEmpty(targetNameScene))
-                {
-                    await SendMessage("/event No target specified.", cancellationToken);
-                    targetNameScene = null;
-                }
-
-                targetNameScene = CleanString(targetNameScene!);
-
-                var (targetIdTarget, typeSceneTarget, matchedNameSceneTarget) = hue.MatchTargetToId(targetNameScene);
-
-                if (targetIdTarget == null || typeSceneTarget == null)
-                {
-                    logger.LogWarning("No matching target found for '{TargetNameScene}'.", targetNameScene);
-                    hue.SetNoActiveTarget($"No Hue room, group, or zone matched '{targetNameScene}'.");
-                    await SendHueFailureOrDefault($"No Hue room, group, or zone matched '{targetNameScene}'.", cancellationToken);
-                    return true;
-                }
-
-                logger.LogInformation(
-                    "Target '{MatchedNameSceneTarget}' matched to {TypeSceneTarget} with ID '{TargetIdTarget}'.", matchedNameSceneTarget, typeSceneTarget, targetIdTarget);
-
-                if (!serverActionMessage.TryGetArgument("scene", out var sceneName) || string.IsNullOrEmpty(sceneName))
-                {
-                    await SendMessage("/event No scene specified.", cancellationToken);
-                    sceneName = null;
-                }
-
-                sceneName = CleanString(sceneName!);
-
-                var (targetIdScene, typeScene, matchedNameScene) = hue.MatchTargetToId(sceneName, matchedNameSceneTarget);
-
-                if (targetIdScene == null || typeScene == null)
-                {
-                    logger.LogWarning("No matching scene found for '{SceneName}'.", sceneName);
-                    hue.SetNoActiveTarget($"No Hue scene named '{sceneName}' was found for {matchedNameSceneTarget}.");
-                    await SendHueFailureOrDefault($"No Hue scene named '{sceneName}' was found for {matchedNameSceneTarget}.", cancellationToken);
-                    return true;
-                }
-
-                logger.LogInformation("Scene '{MatchedNameScene}' matched to {TypeScene} with ID '{TargetIdScene}'.", matchedNameScene, typeScene, targetIdScene);
-
-                if (await hue.SendHueCommandAsync((Guid)targetIdScene, typeSceneTarget, state: true, scene: matchedNameScene))
-                    await SendMessage($"Hue activated scene {matchedNameScene} for {matchedNameSceneTarget}.", cancellationToken);
-                else
-                    await SendHueFailureOrDefault($"Hue could not activate scene {matchedNameScene} for {matchedNameSceneTarget}.", cancellationToken);
-                return true;
-            case "show_emotion":
-                if (!serverActionMessage.TryGetArgument("color", out var colorEmotion) ||
-                    string.IsNullOrEmpty(colorEmotion))
-                {
-                    await SendMessage("/event No Color specified.", cancellationToken);
-                    return true;
-                }
-
-                colorEmotion = CleanStringPascalCase(colorEmotion);
-
-                var hexCodeEmotion = hue.TranslateColorNameToHex(colorEmotion);
-                logger.LogInformation("Hex {HexCodeEmotion}", hexCodeEmotion);
-
-                var (targetIdEmotion, typeEmotion, matchedNameEmotion) =
-                    hue.MatchTargetToId(philipsHueChatAugmentationsServiceInstance.CharacterControlledLight);
-
-                logger.LogInformation(
-                    "Target '{MatchedNameEmotion}' matched to {TypeEmotion} with ID '{TargetIdEmotion}'.", matchedNameEmotion, typeEmotion, targetIdEmotion);
-
-                if (targetIdEmotion == null || typeEmotion == null)
-                {
-                    hue.SetNoActiveTarget("No Hue target is configured for character-controlled lighting.");
-                    await SendHueFailureOrDefault("No Hue target is configured for character-controlled lighting.", cancellationToken);
-                    return true;
-                }
-
-                if (string.IsNullOrWhiteSpace(hexCodeEmotion))
-                {
-                    await SendMessage($"Hue does not know the color '{colorEmotion}'.", cancellationToken);
-                    return true;
-                }
-
-                if (await hue.SendHueCommandAsync((Guid)targetIdEmotion, typeEmotion, state: true, color: hexCodeEmotion))
-                    await SendMessage($"Hue changed {matchedNameEmotion} to {colorEmotion}.", cancellationToken);
-                else
-                    await SendHueFailureOrDefault($"Hue could not change {matchedNameEmotion} to {colorEmotion}.", cancellationToken);
-                return true;
-            case "show_available_types":
-                if (!serverActionMessage.TryGetArgument("type", out var typeName) || string.IsNullOrEmpty(typeName))
-                {
-                    await SendMessage("/event No type specified. Please specify 'lights', 'groups', 'rooms', 'zones', or 'scenes'.", cancellationToken);
-                    return true;
-                }
-
-                typeName = CleanString(typeName!).ToLowerInvariant();
-                object? itemToSerialize = null;
-                string responseHeader = "";
-
-                switch (typeName)
-                {
-                    case "lights":
-                        itemToSerialize = hue.GetLights().FirstOrDefault();
-                        responseHeader = "First available light object:";
-                        break;
-                    case "groups":
-                        itemToSerialize = hue.GetGroups().FirstOrDefault();
-                        responseHeader = "First available group object:";
-                        break;
-                    case "rooms":
-                        itemToSerialize = hue.GetRooms().FirstOrDefault();
-                        responseHeader = "First available room object:";
-                        break;
-                    case "zones":
-                        itemToSerialize = hue.GetZones().FirstOrDefault();
-                        responseHeader = "First available zone object:";
-                        break;
-                    case "scenes":
-                        itemToSerialize = hue.GetScenes().FirstOrDefault();
-                        responseHeader = "First available scene object:";
-                        break;
-                    default:
-                        await SendMessage($"/event Unknown type '{typeName}'. Please specify 'lights', 'groups', 'rooms', 'zones', or 'scenes'.", cancellationToken);
+                    if (targetIdOn == null || typeOn == null)
+                    {
+                        logger.LogInformation($"No matching target found, turning on all lights.");
+                        if (await hue.ControlAllLightsAsync(true))
+                            await SendMessage("All Hue lights were turned on.", cancellationToken);
+                        else
+                            await SendHueFailureOrDefault("Hue could not turn on all lights.", cancellationToken);
                         return true;
-                }
+                    }
 
-                if (itemToSerialize != null)
-                {
-                    var options = new JsonSerializerOptions { WriteIndented = true };
-                    var json = JsonSerializer.Serialize(itemToSerialize, options);
-                    await SendMessage($"/note {responseHeader}\n```json\n{json}\n```", cancellationToken);
-                }
-                else
-                {
-                    await SendMessage($"/note No {typeName} found in your network.", cancellationToken);
-                }
-                return true;
-            default:
-                return false;
-        }
+                    logger.LogInformation("Target '{MatchedNameOn}' matched to {TypeOn} with ID '{TargetIdOn}'.", matchedNameOn, typeOn, targetIdOn);
+
+                    if (await hue.SendHueCommandAsync((Guid)targetIdOn, typeOn, state: true))
+                        await SendMessage($"Hue turned on {matchedNameOn ?? targetOnName}.", cancellationToken);
+                    else
+                        await SendHueFailureOrDefault($"Hue could not turn on {matchedNameOn ?? targetOnName}.", cancellationToken);
+                    return true;
+                case "turn_lights_off":
+                    if (!serverActionMessage.TryGetArgument("target", out var targetOffName) ||
+                        string.IsNullOrEmpty(targetOffName))
+                    {
+                        targetOffName = null;
+                    }
+
+                    targetOffName = CleanString(targetOffName!);
+
+                    var (targetIdOff, typeOff, matchedNameOff) = hue.MatchTargetToId(targetOffName);
+
+                    if (targetIdOff == null || typeOff == null)
+                    {
+                        logger.LogInformation($"No matching target found, turning off all lights.");
+                        if (await hue.ControlAllLightsAsync(false))
+                            await SendMessage("All Hue lights were turned off.", cancellationToken);
+                        else
+                            await SendHueFailureOrDefault("Hue could not turn off all lights.", cancellationToken);
+                        return true;
+                    }
+
+                    logger.LogInformation("Target '{MatchedNameOff}' matched to {TypeOff} with ID '{TargetIdOff}'.", matchedNameOff, typeOff, targetIdOff);
+
+                    if (await hue.SendHueCommandAsync((Guid)targetIdOff, typeOff, state: false))
+                        await SendMessage($"Hue turned off {matchedNameOff ?? targetOffName}.", cancellationToken);
+                    else
+                        await SendHueFailureOrDefault($"Hue could not turn off {matchedNameOff ?? targetOffName}.", cancellationToken);
+                    return true;
+                case "change_color":
+                    if (!serverActionMessage.TryGetArgument("target", out var targetNameColor) ||
+                        string.IsNullOrEmpty(targetNameColor))
+                    {
+                        await SendMessage("/event No target specified.", cancellationToken);
+                        targetNameColor = null;
+                    }
+
+                    targetNameColor = CleanString(targetNameColor!);
+
+                    var (targetIdColor, typeColor, matchedNameColor) = hue.MatchTargetToId(targetNameColor);
+
+                    if (targetIdColor == null || typeColor == null)
+                    {
+                        logger.LogWarning("No matching target found for '{TargetNameColor}'.", targetNameColor);
+                        hue.SetNoActiveTarget($"No Hue light, room, or zone matched '{targetNameColor}'.");
+                        await SendHueFailureOrDefault($"No Hue light, room, or zone matched '{targetNameColor}'.", cancellationToken);
+                        return true;
+                    }
+
+                    logger.LogInformation("Target '{MatchedNameColor}' matched to {TypeColor} with ID '{TargetIdColor}'.", matchedNameColor, typeColor, targetIdColor);
+
+                    if (!serverActionMessage.TryGetArgument("color", out var colorName) || string.IsNullOrEmpty(colorName))
+                    {
+                        await SendMessage("/event No Color specified.", cancellationToken);
+                        return true;
+                    }
+
+                    colorName = CleanStringPascalCase(colorName);
+                    logger.LogInformation("PascalCase Color: {ColorName}", colorName);
+
+                    var hexCode = hue.TranslateColorNameToHex(colorName);
+                    logger.LogInformation("Hex: {HexCode}", hexCode);
+
+                    if (string.IsNullOrWhiteSpace(hexCode))
+                    {
+                        await SendMessage($"Hue does not know the color '{colorName}'.", cancellationToken);
+                        return true;
+                    }
+
+                    if (await hue.SendHueCommandAsync((Guid)targetIdColor, typeColor, state: true, color: hexCode))
+                        await SendMessage($"Hue changed {matchedNameColor ?? targetNameColor} to {colorName}.", cancellationToken);
+                    else
+                        await SendHueFailureOrDefault($"Hue could not change {matchedNameColor ?? targetNameColor} to {colorName}.", cancellationToken);
+                    return true;
+                case "change_brightness":
+                    if (!serverActionMessage.TryGetArgument("target", out var targetNameBrightness) ||
+                        string.IsNullOrEmpty(targetNameBrightness))
+                    {
+                        await SendMessage("/event No target specified.", cancellationToken);
+                        targetNameBrightness = null;
+                    }
+
+                    targetNameBrightness = CleanString(targetNameBrightness!);
+
+                    var (targetIdBrightness, typeBrightness, matchedNameBrightness) = hue.MatchTargetToId(targetNameBrightness);
+
+                    if (targetIdBrightness == null || typeBrightness == null)
+                    {
+                        logger.LogWarning("No matching target found for '{TargetNameBrightness}'.", targetNameBrightness);
+                        hue.SetNoActiveTarget($"No Hue light, room, or zone matched '{targetNameBrightness}'.");
+                        await SendHueFailureOrDefault($"No Hue light, room, or zone matched '{targetNameBrightness}'.", cancellationToken);
+                        return true;
+                    }
+
+                    if (!serverActionMessage.TryGetArgument("brightness", out var brightness) ||
+                        !int.TryParse(brightness, out var brightnessLevel))
+                        brightnessLevel = 100;
+
+                    logger.LogInformation(
+                        "Target '{MatchedNameBrightness}' matched to {TypeBrightness} with ID '{TargetIdBrightness}'.", matchedNameBrightness, typeBrightness, targetIdBrightness);
+
+                    if (await hue.SendHueCommandAsync((Guid)targetIdBrightness, typeBrightness, state: true,
+                            brightness: brightnessLevel))
+                        await SendMessage($"Hue changed the brightness of {matchedNameBrightness} to {brightnessLevel}.", cancellationToken);
+                    else
+                        await SendHueFailureOrDefault($"Hue could not change the brightness of {matchedNameBrightness}.", cancellationToken);
+                    return true;
+                case "activate_scene":
+                    if (!serverActionMessage.TryGetArgument("target", out var targetNameScene) ||
+                        string.IsNullOrEmpty(targetNameScene))
+                    {
+                        await SendMessage("/event No target specified.", cancellationToken);
+                        targetNameScene = null;
+                    }
+
+                    targetNameScene = CleanString(targetNameScene!);
+
+                    var (targetIdTarget, typeSceneTarget, matchedNameSceneTarget) = hue.MatchTargetToId(targetNameScene);
+
+                    if (targetIdTarget == null || typeSceneTarget == null)
+                    {
+                        logger.LogWarning("No matching target found for '{TargetNameScene}'.", targetNameScene);
+                        hue.SetNoActiveTarget($"No Hue room, group, or zone matched '{targetNameScene}'.");
+                        await SendHueFailureOrDefault($"No Hue room, group, or zone matched '{targetNameScene}'.", cancellationToken);
+                        return true;
+                    }
+
+                    logger.LogInformation(
+                        "Target '{MatchedNameSceneTarget}' matched to {TypeSceneTarget} with ID '{TargetIdTarget}'.", matchedNameSceneTarget, typeSceneTarget, targetIdTarget);
+
+                    if (!serverActionMessage.TryGetArgument("scene", out var sceneName) || string.IsNullOrEmpty(sceneName))
+                    {
+                        await SendMessage("/event No scene specified.", cancellationToken);
+                        sceneName = null;
+                    }
+
+                    sceneName = CleanString(sceneName!);
+
+                    var (targetIdScene, typeScene, matchedNameScene) = hue.MatchTargetToId(sceneName, matchedNameSceneTarget);
+
+                    if (targetIdScene == null || typeScene == null)
+                    {
+                        logger.LogWarning("No matching scene found for '{SceneName}'.", sceneName);
+                        hue.SetNoActiveTarget($"No Hue scene named '{sceneName}' was found for {matchedNameSceneTarget}.");
+                        await SendHueFailureOrDefault($"No Hue scene named '{sceneName}' was found for {matchedNameSceneTarget}.", cancellationToken);
+                        return true;
+                    }
+
+                    logger.LogInformation("Scene '{MatchedNameScene}' matched to {TypeScene} with ID '{TargetIdScene}'.", matchedNameScene, typeScene, targetIdScene);
+
+                    if (await hue.SendHueCommandAsync((Guid)targetIdScene, typeSceneTarget, state: true, scene: matchedNameScene))
+                        await SendMessage($"Hue activated scene {matchedNameScene} for {matchedNameSceneTarget}.", cancellationToken);
+                    else
+                        await SendHueFailureOrDefault($"Hue could not activate scene {matchedNameScene} for {matchedNameSceneTarget}.", cancellationToken);
+                    return true;
+                case "show_emotion":
+                    if (!serverActionMessage.TryGetArgument("color", out var colorEmotion) ||
+                        string.IsNullOrEmpty(colorEmotion))
+                    {
+                        await SendMessage("/event No Color specified.", cancellationToken);
+                        return true;
+                    }
+
+                    colorEmotion = CleanStringPascalCase(colorEmotion);
+
+                    var hexCodeEmotion = hue.TranslateColorNameToHex(colorEmotion);
+                    logger.LogInformation("Hex {HexCodeEmotion}", hexCodeEmotion);
+
+                    var (targetIdEmotion, typeEmotion, matchedNameEmotion) =
+                        hue.MatchTargetToId(philipsHueChatAugmentationsServiceInstance.CharacterControlledLight);
+
+                    logger.LogInformation(
+                        "Target '{MatchedNameEmotion}' matched to {TypeEmotion} with ID '{TargetIdEmotion}'.", matchedNameEmotion, typeEmotion, targetIdEmotion);
+
+                    if (targetIdEmotion == null || typeEmotion == null)
+                    {
+                        hue.SetNoActiveTarget("No Hue target is configured for character-controlled lighting.");
+                        await SendHueFailureOrDefault("No Hue target is configured for character-controlled lighting.", cancellationToken);
+                        return true;
+                    }
+
+                    if (string.IsNullOrWhiteSpace(hexCodeEmotion))
+                    {
+                        await SendMessage($"Hue does not know the color '{colorEmotion}'.", cancellationToken);
+                        return true;
+                    }
+
+                    if (await hue.SendHueCommandAsync((Guid)targetIdEmotion, typeEmotion, state: true, color: hexCodeEmotion))
+                        await SendMessage($"Hue changed {matchedNameEmotion} to {colorEmotion}.", cancellationToken);
+                    else
+                        await SendHueFailureOrDefault($"Hue could not change {matchedNameEmotion} to {colorEmotion}.", cancellationToken);
+                    return true;
+                case "show_hue_inventory":
+                    await SendHueInventoryNoteAsync(cancellationToken);
+                    return true;
+                default:
+                    return false;
+            }
         }
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
         {
@@ -543,6 +495,11 @@ public class PhilipsHueChatAugmentationsServiceInstance(
         await session.SendSecretAsync(message, cancellationToken);
         var reply = await GenerateShortCharacterReply(message, cancellationToken);
         await session.SendCharacterMessageAsync(reply, cancellationToken);
+    }
+
+    private Task SendNoteOnly(string note, CancellationToken cancellationToken)
+    {
+        return session.SendNoteAsync(note, cancellationToken);
     }
 
     private Task SendHueFailureOrDefault(string fallbackMessage, CancellationToken cancellationToken)
@@ -636,6 +593,166 @@ public class PhilipsHueChatAugmentationsServiceInstance(
         return CultureInfo.CurrentCulture.TextInfo
             .ToTitleCase(input.ToLower())
             .Replace(" ", "");
+    }
+
+    private string BuildHueInventoryNote()
+    {
+        var lights = hue.GetLights()
+            .Where(x => !string.IsNullOrWhiteSpace(x.Metadata?.Name))
+            .OrderBy(x => x.Metadata!.Name, StringComparer.CurrentCultureIgnoreCase)
+            .ToList();
+        var rooms = hue.GetRooms()
+            .Where(x => !string.IsNullOrWhiteSpace(x.Metadata?.Name))
+            .OrderBy(x => x.Metadata!.Name, StringComparer.CurrentCultureIgnoreCase)
+            .ToList();
+        var zones = hue.GetZones()
+            .Where(x => !string.IsNullOrWhiteSpace(x.Metadata?.Name))
+            .OrderBy(x => x.Metadata!.Name, StringComparer.CurrentCultureIgnoreCase)
+            .ToList();
+        var groups = hue.GetGroups()
+            .Where(x => !string.IsNullOrWhiteSpace(x.Metadata?.Name))
+            .OrderBy(x => x.Metadata!.Name, StringComparer.CurrentCultureIgnoreCase)
+            .ToList();
+        var scenes = hue.GetScenes()
+            .Where(x => !string.IsNullOrWhiteSpace(x.Metadata?.Name))
+            .OrderBy(x => x.Metadata!.Name, StringComparer.CurrentCultureIgnoreCase)
+            .ToList();
+
+        var assignedLightIds = new HashSet<Guid>();
+        var representedGroupIds = rooms
+            .Select(GetGroupedLightId)
+            .Concat(zones.Select(GetGroupedLightId))
+            .OfType<Guid>()
+            .ToHashSet();
+
+        var builder = new StringBuilder("Philips Hue objects available in this chat:");
+
+        if (rooms.Any())
+        {
+            AppendSectionHeader(builder, "Rooms");
+            foreach (var room in rooms)
+                AppendArea(builder, room.Metadata!.Name, room.Children, GetGroupedLightId(room), lights, scenes, assignedLightIds);
+        }
+
+        if (zones.Any())
+        {
+            AppendSectionHeader(builder, "Zones");
+            foreach (var zone in zones)
+                AppendArea(builder, zone.Metadata!.Name, zone.Children, GetGroupedLightId(zone), lights, scenes, assignedLightIds);
+        }
+
+        var visibleGroups = groups.Where(x => !representedGroupIds.Contains(x.Id)).ToList();
+        if (visibleGroups.Any())
+        {
+            AppendSectionHeader(builder, "Light groups");
+            foreach (var group in visibleGroups)
+            {
+                builder.Append("- ").AppendLine(group.Metadata!.Name);
+                AppendScenes(builder, scenes.Where(x => x.Group?.Rid == group.Id).Select(x => x.Metadata!.Name));
+            }
+        }
+
+        var ungroupedLights = lights.Where(x => !assignedLightIds.Contains(x.Id)).ToList();
+        if (ungroupedLights.Any())
+        {
+            AppendSectionHeader(builder, "Ungrouped lights");
+            foreach (var light in ungroupedLights)
+                builder.Append("- ").AppendLine(light.Metadata!.Name);
+        }
+
+        AppendExactNames(builder, "Rooms", rooms.Select(x => x.Metadata!.Name));
+        AppendExactNames(builder, "Zones", zones.Select(x => x.Metadata!.Name));
+        AppendExactNames(builder, "Light groups", visibleGroups.Select(x => x.Metadata!.Name));
+        AppendExactNames(builder, "Lights", lights.Select(x => x.Metadata!.Name));
+        AppendExactNames(builder, "Scenes", scenes.Select(x => x.Metadata!.Name));
+
+        var duplicateNames = rooms.Select(x => x.Metadata!.Name)
+            .Concat(zones.Select(x => x.Metadata!.Name))
+            .Concat(visibleGroups.Select(x => x.Metadata!.Name))
+            .Concat(lights.Select(x => x.Metadata!.Name))
+            .GroupBy(x => x, StringComparer.CurrentCultureIgnoreCase)
+            .Where(x => x.Count() > 1)
+            .Select(x => x.Key)
+            .OrderBy(x => x, StringComparer.CurrentCultureIgnoreCase)
+            .ToList();
+
+        if (duplicateNames.Any())
+            builder.AppendLine().Append("Duplicate names: ").AppendLine(string.Join(", ", duplicateNames));
+
+        return builder.ToString().TrimEnd();
+    }
+
+    private static void AppendSectionHeader(StringBuilder builder, string header)
+    {
+        builder.AppendLine().AppendLine(header);
+    }
+
+    private static void AppendArea(
+        StringBuilder builder,
+        string areaName,
+        IEnumerable<HueApi.Models.ResourceIdentifier>? children,
+        Guid? groupedLightId,
+        IEnumerable<HueApi.Models.Light> lights,
+        IEnumerable<HueApi.Models.Scene> scenes,
+        ISet<Guid> assignedLightIds)
+    {
+        builder.Append("- ").AppendLine(areaName);
+
+        var childLightIds = children?
+            .Where(x => x.Rtype == "light")
+            .Select(x => x.Rid)
+            .ToHashSet() ?? [];
+        var childLights = lights
+            .Where(x => childLightIds.Contains(x.Id))
+            .Select(x => x.Metadata!.Name)
+            .OrderBy(x => x, StringComparer.CurrentCultureIgnoreCase)
+            .ToList();
+
+        foreach (var childLightId in childLightIds)
+            assignedLightIds.Add(childLightId);
+
+        if (childLights.Any())
+            builder.Append("  Lights: ").AppendLine(string.Join(", ", childLights));
+
+        if (groupedLightId.HasValue)
+            AppendScenes(builder, scenes.Where(x => x.Group?.Rid == groupedLightId.Value).Select(x => x.Metadata!.Name));
+    }
+
+    private static void AppendScenes(StringBuilder builder, IEnumerable<string> sceneNames)
+    {
+        var names = sceneNames
+            .Where(x => !string.IsNullOrWhiteSpace(x))
+            .Distinct(StringComparer.CurrentCultureIgnoreCase)
+            .OrderBy(x => x, StringComparer.CurrentCultureIgnoreCase)
+            .ToList();
+
+        if (names.Any())
+            builder.Append("  Scenes: ").AppendLine(string.Join(", ", names));
+    }
+
+    private static void AppendExactNames(StringBuilder builder, string label, IEnumerable<string> names)
+    {
+        var nameList = names
+            .Where(x => !string.IsNullOrWhiteSpace(x))
+            .Distinct(StringComparer.CurrentCultureIgnoreCase)
+            .OrderBy(x => x, StringComparer.CurrentCultureIgnoreCase)
+            .ToList();
+
+        if (!nameList.Any())
+            return;
+
+        builder.AppendLine().Append(label).Append(": ").AppendLine(string.Join(", ", nameList));
+    }
+
+    private static Guid? GetGroupedLightId(HueApi.Models.Room room)
+    {
+        return room.Services?.FirstOrDefault(x => x.Rtype == "grouped_light")?.Rid
+               ?? room.GroupedServices?.FirstOrDefault(x => x.Rtype == "grouped_light")?.Rid;
+    }
+
+    private static Guid? GetGroupedLightId(HueApi.Models.Zone zone)
+    {
+        return zone.Services?.FirstOrDefault(x => x.Rtype == "grouped_light")?.Rid;
     }
 
     public ValueTask DisposeAsync()
