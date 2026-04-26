@@ -58,7 +58,7 @@ public class HueCommandService : IHueCommandService
 
             if (updates.Any())
             {
-                _ = await _connectionService.HueClient.UpdateLightAsync(targetId, lightCommand);
+                _ = await _connectionService.HueClient.Light.UpdateAsync(targetId, lightCommand);
                 _logger.LogInformation("Light '{TargetId}' updated with: {Join}", targetId, string.Join(", ", updates));
             }
             else
@@ -78,7 +78,7 @@ public class HueCommandService : IHueCommandService
                 };
 
                 // Activate the scene
-                var result = await _connectionService.HueClient.UpdateSceneAsync(targetId, updateScene);
+                var result = await _connectionService.HueClient.Scene.UpdateAsync(targetId, updateScene);
 
                 if (!result.HasErrors)
                 {
@@ -118,7 +118,7 @@ public class HueCommandService : IHueCommandService
 
             if (updates.Any())
             {
-                _ = await _connectionService.HueClient.UpdateGroupedLightAsync(targetId, hueCommand);
+                _ = await _connectionService.HueClient.GroupedLight.UpdateAsync(targetId, hueCommand);
                 _logger.LogInformation("Group/Room '{TargetId}' updated with: {Join}", targetId, string.Join(", ", updates));
             }
             else
@@ -133,7 +133,7 @@ public class HueCommandService : IHueCommandService
 
             if (updates.Any())
             {
-                _ = await _connectionService.HueClient.UpdateEntertainmentConfigurationAsync(targetId, hueCommand);
+                _ = await _connectionService.HueClient.EntertainmentConfiguration.UpdateAsync(targetId, hueCommand);
                 _logger.LogInformation("Entertainment Configuration '{TargetId}' updated with: {Join}", targetId, string.Join(", ", updates));
             }
             else
@@ -158,7 +158,7 @@ public class HueCommandService : IHueCommandService
         foreach (var light in _dataService.Lights)
         {
             var lightCommand = turnOn ? new UpdateLight().TurnOn() : new UpdateLight().TurnOff();
-            _ = await _connectionService.HueClient.UpdateLightAsync(light.Id, lightCommand);
+            _ = await _connectionService.HueClient.Light.UpdateAsync(light.Id, lightCommand);
             _logger.LogInformation("Turned light {State}: {MetadataName}", turnOn ? "on" : "off", light.Metadata?.Name);
         }
     }

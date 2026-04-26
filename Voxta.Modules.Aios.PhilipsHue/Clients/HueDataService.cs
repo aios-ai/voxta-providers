@@ -69,7 +69,7 @@ public class HueDataService : IHueDataService
     private async Task GetLightsAsync()
     {
         await RetrieveDataAsync(
-            _connectionService.HueClient!.GetLightsAsync,
+            _connectionService.HueClient!.Light.GetAllAsync,
             data => _lights = data,
             "lights"
         );
@@ -78,7 +78,7 @@ public class HueDataService : IHueDataService
     private async Task GetGroupsAsync()
     {
         await RetrieveDataAsync(
-            _connectionService.HueClient!.GetGroupedLightsAsync,
+            _connectionService.HueClient!.GroupedLight.GetAllAsync,
             data => _groups = data,
             "groups"
         );
@@ -87,7 +87,7 @@ public class HueDataService : IHueDataService
     private async Task GetRoomsAsync()
     {
         await RetrieveDataAsync(
-            _connectionService.HueClient!.GetRoomsAsync,
+            _connectionService.HueClient!.Room.GetAllAsync,
             data => _rooms = data,
             "rooms"
         );
@@ -96,7 +96,7 @@ public class HueDataService : IHueDataService
     private async Task GetZonesAsync()
     {
         await RetrieveDataAsync(
-            _connectionService.HueClient!.GetZonesAsync,
+            _connectionService.HueClient!.Zone.GetAllAsync,
             data => _zones = data,
             "zones"
         );
@@ -105,7 +105,7 @@ public class HueDataService : IHueDataService
     private async Task GetScenesAsync()
     {
         await RetrieveDataAsync(
-            _connectionService.HueClient!.GetScenesAsync,
+            _connectionService.HueClient!.Scene.GetAllAsync,
             data => _scenes = data,
             "scenes"
         );
