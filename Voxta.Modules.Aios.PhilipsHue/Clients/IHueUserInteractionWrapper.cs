@@ -5,4 +5,5 @@ namespace Voxta.Modules.Aios.PhilipsHue.Clients;
 public interface IHueUserInteractionWrapper
 {
     Task<IUserInteractionRequestToken> RequestUserInteraction(CancellationToken cancellationToken);
+    Task SetBridgeConnectionStateAsync(bool connected, CancellationToken cancellationToken);
 }

@@ -4,8 +4,6 @@ using HueApi.BridgeLocator;
 using HueApi.Models.Clip;
 using HueApi.Models.Exceptions;
 using Microsoft.Extensions.Logging;
-using Voxta.Abstractions.Chats.Objects.Chats;
-using Voxta.Abstractions.Chats.Sessions;
 
 namespace Voxta.Modules.Aios.PhilipsHue.Clients;
 
@@ -16,7 +14,6 @@ public class HueBridgeConnectionService : IHueBridgeConnectionService
 
     private readonly ILogger<HueBridgeConnectionService> _logger;
     private readonly IHueUserInteractionWrapper _userInteractionWrapper;
-    private readonly IChatSessionChatAugmentationApi _session;
     private readonly string _authPath;
 
     private LocalHueApi? _hueClient;
@@ -31,12 +28,10 @@ public class HueBridgeConnectionService : IHueBridgeConnectionService
     public HueBridgeConnectionService(
         ILogger<HueBridgeConnectionService> logger,
         IHueUserInteractionWrapper userInteractionWrapper,
-        IChatSessionChatAugmentationApi session,
         string authPath)
     {
         _logger = logger;
         _userInteractionWrapper = userInteractionWrapper;
-        _session = session;
         _authPath = authPath;
     }
 
@@ -253,13 +248,9 @@ public class HueBridgeConnectionService : IHueBridgeConnectionService
         if (state != HueBridgeState.Connected)
             _hueClient = null;
 
-        var flags = state == HueBridgeState.Connected
-            ? new[] { "hueBridge_connected", "!hueBridge_disconnected" }
-            : ["hueBridge_disconnected", "!hueBridge_connected"];
-
         try
         {
-            await _session.SetFlags(SetFlagRequest.ParseFlags(flags), cancellationToken);
+            await _userInteractionWrapper.SetBridgeConnectionStateAsync(state == HueBridgeState.Connected, cancellationToken);
         }
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
         {

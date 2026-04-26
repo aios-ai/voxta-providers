@@ -30,9 +30,7 @@ public class PhilipsHueChatAugmentationsService(
         var logger = loggerFactory.CreateLogger<PhilipsHueChatAugmentationsServiceInstance>();
         logger.LogInformation("Chat session {SessionId} has been augmented with {Augmentation}", session.SessionId, VoxtaModule.AugmentationKey);
         
-        var authPath = Path.GetFullPath(Environment.ExpandEnvironmentVariables(ModuleConfiguration.GetRequired(ModuleConfigurationProvider.AuthPath)));
-        if (!authPath.EndsWith(".json")) throw new InvalidOperationException("AuthPath must end with .json");
-        authPath = authPath[..^5] + $".{auth.UserId}.json";
+        var authPath = PhilipsHueAuthPath.GetUserAuthPath(ModuleConfiguration.GetRequired(ModuleConfigurationProvider.AuthPath), auth.UserId);
 
         var config = new PhilipsHueChatAugmentationsSettings
         {
@@ -45,7 +43,7 @@ public class PhilipsHueChatAugmentationsService(
         var hueUserInteractionWrapper = new HueUserInteractionWrapper(session);
         
         var colorConverterService = new ColorConverterService(loggerFactory.CreateLogger<ColorConverterService>());
-        var bridgeConnectionService = new HueBridgeConnectionService(loggerFactory.CreateLogger<HueBridgeConnectionService>(), hueUserInteractionWrapper, session, config.AuthPath);
+        var bridgeConnectionService = new HueBridgeConnectionService(loggerFactory.CreateLogger<HueBridgeConnectionService>(), hueUserInteractionWrapper, config.AuthPath);
         var dataService = new HueDataService(bridgeConnectionService, loggerFactory.CreateLogger<HueDataService>());
         var commandService = new HueCommandService(bridgeConnectionService, dataService, loggerFactory.CreateLogger<HueCommandService>());
         var entityMatchingService = new HueEntityMatchingService(dataService, loggerFactory.CreateLogger<HueEntityMatchingService>());

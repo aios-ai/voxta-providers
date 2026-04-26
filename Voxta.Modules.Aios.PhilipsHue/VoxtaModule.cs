@@ -33,6 +33,7 @@ public class VoxtaModule : IVoxtaModule
             Augmentations = [AugmentationKey],
             ModuleConfigurationProviderType = typeof(ModuleConfigurationProvider),
             ModuleConfigurationFieldsRequiringReload = ModuleConfigurationProvider.FieldsRequiringReload,
+            ModuleTestingProviderType = typeof(ModuleTestingProvider),
         });
         
         builder.AddChatAugmentationsService<PhilipsHueChatAugmentationsService>(ServiceName);
