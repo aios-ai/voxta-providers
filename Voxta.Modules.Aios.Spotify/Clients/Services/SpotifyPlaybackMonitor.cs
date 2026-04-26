@@ -14,7 +14,6 @@ public class SpotifyPlaybackMonitor(
     ILogger<SpotifyPlaybackMonitor> logger)
 {
     private CurrentlyPlayingContext? _lastKnownState;
-    private string? _lastAction;
     public CurrentlyPlayingContext? PlaybackState { get; private set; }
 
     public async Task MonitorSpotifyPlayback(CancellationToken cancellationToken)
@@ -118,7 +117,6 @@ public class SpotifyPlaybackMonitor(
 
     public async Task SetLastActionAsync(string action, CancellationToken cancellationToken)
     {
-        _lastAction = action;
         await PublishContextsAsync(PlaybackState, cancellationToken);
     }
 
@@ -192,11 +190,6 @@ public class SpotifyPlaybackMonitor(
 
                 AddContext(contexts, "album", "Spotify Album", albumText);
             }
-        }
-
-        if (!string.IsNullOrWhiteSpace(_lastAction))
-        {
-            AddContext(contexts, "last_action", "Spotify Last Action", $"Last Spotify action: {_lastAction}");
         }
 
         return contexts.ToArray();
