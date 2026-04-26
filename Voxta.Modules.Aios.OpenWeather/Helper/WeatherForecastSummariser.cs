@@ -75,28 +75,40 @@ public static class WeatherForecastSummariser
 
         var text = $"{date.ToString("dddd", culture)} {label}: " +
                    $"{culture.TextInfo.ToTitleCase(commonCondition)}, " +
-                   $"{minTemp:0.#}–{maxTemp:0.#}{unitSuffix}" +
+                   $"{FormatWholeNumber(minTemp)}–{FormatWholeNumber(maxTemp)}{unitSuffix}" +
                    $"{rainText}{snowText}";
         
         if (weatherDetails.Contains("Wind"))
         {
             var avgWindSpeed = block.Average(x => x.Wind.Speed);
             var avgWindDir = block.Average(x => x.Wind.Deg);
-            text += $". Wind: {avgWindSpeed:0.#} m/s at {avgWindDir:0.#}°";
+            text += $". Wind: {avgWindSpeed:0.#} m/s at {FormatWholeNumber(avgWindDir)}°";
         }
 
         if (weatherDetails.Contains("CloudCover"))
         {
             var avgClouds = block.Average(x => x.Clouds.All);
-            text += $", Cloud cover: {avgClouds:0.#}%";
+            text += $", Cloud cover: {FormatWholeNumber(avgClouds)}%";
         }
 
         if (weatherDetails.Contains("Visibility"))
         {
-            var avgVisibility = block.Average(x => x.Visibility) / 1000.0;
-            text += $", Visibility: {avgVisibility:0.#} km";
+            var visibilityValues = block
+                .Where(x => x.Visibility.HasValue)
+                .Select(x => x.Visibility!.Value)
+                .ToList();
+            if (visibilityValues.Count > 0)
+            {
+                var avgVisibility = visibilityValues.Average() / 1000.0;
+                text += $", Visibility: {FormatWholeNumber(avgVisibility)} km";
+            }
         }
 
         return text + ".";
+    }
+
+    private static string FormatWholeNumber(double value)
+    {
+        return Math.Round(value).ToString("0", CultureInfo.InvariantCulture);
     }
 }
