@@ -36,6 +36,13 @@ public class HueCommandService : IHueCommandService
         {
             if (type == "light")
             {
+                var targetLight = _dataService.Lights.FirstOrDefault(x => x.Id == targetId);
+                if (targetLight != null && IsSmartPlug(targetLight) && (!string.IsNullOrWhiteSpace(color) || brightness.HasValue))
+                {
+                    LastUserVisibleError = $"Hue target '{targetLight.Metadata?.Name}' is a smart plug and only supports on/off control.";
+                    return false;
+                }
+
                 var lightCommand = new UpdateLight();
                 var updates = new List<string>();
 
@@ -164,7 +171,11 @@ public class HueCommandService : IHueCommandService
             return false;
         }
 
-        if (!_dataService.Lights.Any())
+        var controllableLights = _dataService.Lights
+            .Where(x => !IsSmartPlug(x))
+            .ToList();
+
+        if (!controllableLights.Any())
         {
             LastUserVisibleError = "No Hue lights are available to control.";
             return false;
@@ -172,7 +183,7 @@ public class HueCommandService : IHueCommandService
 
         var anySucceeded = false;
         var anyFailed = false;
-        foreach (var light in _dataService.Lights)
+        foreach (var light in controllableLights)
         {
             try
             {
@@ -203,5 +214,10 @@ public class HueCommandService : IHueCommandService
 
         LastUserVisibleError = "Hue could not control any lights. Please check that the bridge and lights are available.";
         return false;
+    }
+
+    private static bool IsSmartPlug(HueApi.Models.Light light)
+    {
+        return string.Equals(light.Metadata?.Archetype, "plug", StringComparison.OrdinalIgnoreCase);
     }
 }

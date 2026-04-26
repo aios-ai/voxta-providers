@@ -44,8 +44,8 @@ public class PhilipsHueChatAugmentationsServiceInstance(
                     {
                         Name = "turn_lights_on",
                         Layer = "HueControl",
-                        ShortDescription = "turn on lights",
-                        Description = "When {{ user }} asks to turn on a light, a light-group, room or zone.",
+                        ShortDescription = "turn on Hue targets",
+                        Description = "When {{ user }} asks to turn on a Hue light, smart plug, light-group, room or zone.",
                         /*Effect = new ActionEffect
                         {
                             Secret = "{{ char }} turned on the light.",
@@ -62,7 +62,7 @@ public class PhilipsHueChatAugmentationsServiceInstance(
                                 Type = FunctionArgumentType.String,
                                 Required = false,
                                 Description =
-                                    "Name of the light, light-group, room or zone the {{ user }} asked to control. If no light or room has been named, or user want's to turn on all lights, don't select anything."
+                                    "Name of the light, smart plug, light-group, room or zone the {{ user }} asked to control. If no light, smart plug or room has been named, or user want's to turn on all lights, don't select anything."
                             }
                         ]
                     },
@@ -71,8 +71,8 @@ public class PhilipsHueChatAugmentationsServiceInstance(
                     {
                         Name = "turn_lights_off",
                         Layer = "HueControl",
-                        ShortDescription = "turn off lights",
-                        Description = "When {{ user }} asks to turn off the lights.",
+                        ShortDescription = "turn off Hue targets",
+                        Description = "When {{ user }} asks to turn off Hue lights, smart plugs, light-groups, rooms or zones.",
                         //MatchFilter = [@"\b(?:toggle|change|set|activate|light|lights|room|zone)\b"],
                         FlagsFilter = "hueBridge_connected",
                         Timing = FunctionTiming.AfterUserMessage,
@@ -85,7 +85,7 @@ public class PhilipsHueChatAugmentationsServiceInstance(
                                 Type = FunctionArgumentType.String,
                                 Required = false,
                                 Description =
-                                    "Name of the light, light-group, room or zone the {{ user }} asked to control. If no light or room has been named, or user want's to turn off all lights, don't select anything."
+                                    "Name of the light, smart plug, light-group, room or zone the {{ user }} asked to control. If no light, smart plug or room has been named, or user want's to turn off all lights, don't select anything."
                             }
                         ]
                     },
@@ -215,8 +215,8 @@ public class PhilipsHueChatAugmentationsServiceInstance(
                     {
                         Name = "show_hue_inventory",
                         Layer = "HueControl",
-                        ShortDescription = "show available lights, groups, rooms, zones or scenes",
-                        Description = "When {{ user }} asks to list available Philips Hue lights, groups, rooms, zones or scenes.",
+                        ShortDescription = "show available Hue targets",
+                        Description = "When {{ user }} asks to list available Philips Hue lights, smart plugs, groups, rooms, zones or scenes.",
                         FlagsFilter = "hueBridge_connected",
                         Timing = FunctionTiming.AfterUserMessage,
                         CancelReply = true,
@@ -618,7 +618,13 @@ public class PhilipsHueChatAugmentationsServiceInstance(
             .OrderBy(x => x.Metadata!.Name, StringComparer.CurrentCultureIgnoreCase)
             .ToList();
 
-        var assignedLightIds = new HashSet<Guid>();
+        var smartPlugs = lights
+            .Where(IsSmartPlug)
+            .ToList();
+        var controllableLights = lights
+            .Where(x => !IsSmartPlug(x))
+            .ToList();
+
         var representedGroupIds = rooms
             .Select(GetGroupedLightId)
             .Concat(zones.Select(GetGroupedLightId))
@@ -631,14 +637,14 @@ public class PhilipsHueChatAugmentationsServiceInstance(
         {
             AppendSectionHeader(builder, "Rooms");
             foreach (var room in rooms)
-                AppendArea(builder, room.Metadata!.Name, room.Children, GetGroupedLightId(room), lights, scenes, assignedLightIds);
+                builder.Append("- ").AppendLine(room.Metadata!.Name);
         }
 
         if (zones.Any())
         {
             AppendSectionHeader(builder, "Zones");
             foreach (var zone in zones)
-                AppendArea(builder, zone.Metadata!.Name, zone.Children, GetGroupedLightId(zone), lights, scenes, assignedLightIds);
+                builder.Append("- ").AppendLine(zone.Metadata!.Name);
         }
 
         var visibleGroups = groups.Where(x => !representedGroupIds.Contains(x.Id)).ToList();
@@ -646,25 +652,29 @@ public class PhilipsHueChatAugmentationsServiceInstance(
         {
             AppendSectionHeader(builder, "Light groups");
             foreach (var group in visibleGroups)
-            {
                 builder.Append("- ").AppendLine(group.Metadata!.Name);
-                AppendScenes(builder, scenes.Where(x => x.Group?.Rid == group.Id).Select(x => x.Metadata!.Name));
-            }
         }
 
-        var ungroupedLights = lights.Where(x => !assignedLightIds.Contains(x.Id)).ToList();
-        if (ungroupedLights.Any())
+        if (controllableLights.Any())
         {
-            AppendSectionHeader(builder, "Ungrouped lights");
-            foreach (var light in ungroupedLights)
+            AppendSectionHeader(builder, "Lights");
+            foreach (var light in controllableLights)
                 builder.Append("- ").AppendLine(light.Metadata!.Name);
         }
 
-        AppendExactNames(builder, "Rooms", rooms.Select(x => x.Metadata!.Name));
-        AppendExactNames(builder, "Zones", zones.Select(x => x.Metadata!.Name));
-        AppendExactNames(builder, "Light groups", visibleGroups.Select(x => x.Metadata!.Name));
-        AppendExactNames(builder, "Lights", lights.Select(x => x.Metadata!.Name));
-        AppendExactNames(builder, "Scenes", scenes.Select(x => x.Metadata!.Name));
+        if (smartPlugs.Any())
+        {
+            AppendSectionHeader(builder, "Smart plugs");
+            foreach (var smartPlug in smartPlugs)
+                builder.Append("- ").AppendLine(smartPlug.Metadata!.Name);
+        }
+
+        if (scenes.Any())
+        {
+            AppendSectionHeader(builder, "Scenes");
+            foreach (var scene in scenes)
+                builder.Append("- ").AppendLine(scene.Metadata!.Name);
+        }
 
         var duplicateNames = rooms.Select(x => x.Metadata!.Name)
             .Concat(zones.Select(x => x.Metadata!.Name))
@@ -687,61 +697,9 @@ public class PhilipsHueChatAugmentationsServiceInstance(
         builder.AppendLine().AppendLine(header);
     }
 
-    private static void AppendArea(
-        StringBuilder builder,
-        string areaName,
-        IEnumerable<HueApi.Models.ResourceIdentifier>? children,
-        Guid? groupedLightId,
-        IEnumerable<HueApi.Models.Light> lights,
-        IEnumerable<HueApi.Models.Scene> scenes,
-        ISet<Guid> assignedLightIds)
+    private static bool IsSmartPlug(HueApi.Models.Light light)
     {
-        builder.Append("- ").AppendLine(areaName);
-
-        var childLightIds = children?
-            .Where(x => x.Rtype == "light")
-            .Select(x => x.Rid)
-            .ToHashSet() ?? [];
-        var childLights = lights
-            .Where(x => childLightIds.Contains(x.Id))
-            .Select(x => x.Metadata!.Name)
-            .OrderBy(x => x, StringComparer.CurrentCultureIgnoreCase)
-            .ToList();
-
-        foreach (var childLightId in childLightIds)
-            assignedLightIds.Add(childLightId);
-
-        if (childLights.Any())
-            builder.Append("  Lights: ").AppendLine(string.Join(", ", childLights));
-
-        if (groupedLightId.HasValue)
-            AppendScenes(builder, scenes.Where(x => x.Group?.Rid == groupedLightId.Value).Select(x => x.Metadata!.Name));
-    }
-
-    private static void AppendScenes(StringBuilder builder, IEnumerable<string> sceneNames)
-    {
-        var names = sceneNames
-            .Where(x => !string.IsNullOrWhiteSpace(x))
-            .Distinct(StringComparer.CurrentCultureIgnoreCase)
-            .OrderBy(x => x, StringComparer.CurrentCultureIgnoreCase)
-            .ToList();
-
-        if (names.Any())
-            builder.Append("  Scenes: ").AppendLine(string.Join(", ", names));
-    }
-
-    private static void AppendExactNames(StringBuilder builder, string label, IEnumerable<string> names)
-    {
-        var nameList = names
-            .Where(x => !string.IsNullOrWhiteSpace(x))
-            .Distinct(StringComparer.CurrentCultureIgnoreCase)
-            .OrderBy(x => x, StringComparer.CurrentCultureIgnoreCase)
-            .ToList();
-
-        if (!nameList.Any())
-            return;
-
-        builder.AppendLine().Append(label).Append(": ").AppendLine(string.Join(", ", nameList));
+        return string.Equals(light.Metadata?.Archetype, "plug", StringComparison.OrdinalIgnoreCase);
     }
 
     private static Guid? GetGroupedLightId(HueApi.Models.Room room)

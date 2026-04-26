@@ -1,3 +1,5 @@
+using System.Text.Json;
+using System.Text.Json.Serialization;
 using HueApi.Models;
 using Microsoft.Extensions.Logging;
 
@@ -5,6 +7,14 @@ namespace Voxta.Modules.Aios.PhilipsHue.Clients;
 
 public class HueDataService : IHueDataService
 {
+    private const bool DumpBridgeDataForDebuggingEnabled = false;
+
+    private static readonly JsonSerializerOptions DebugJsonSerializerOptions = new()
+    {
+        WriteIndented = true,
+        ReferenceHandler = ReferenceHandler.IgnoreCycles
+    };
+
     private readonly IHueBridgeConnectionService _connectionService;
     private readonly ILogger<HueDataService> _logger;
 
@@ -40,7 +50,34 @@ public class HueDataService : IHueDataService
             await GetScenesAsync()
         };
 
-        return results.All(x => x);
+        var success = results.All(x => x);
+        if (success && DumpBridgeDataForDebuggingEnabled)
+            DumpBridgeDataForDebugging();
+
+        return success;
+    }
+
+    private void DumpBridgeDataForDebugging()
+    {
+        try
+        {
+            var debugData = new
+            {
+                Lights,
+                Groups,
+                Rooms,
+                Zones,
+                Scenes
+            };
+
+            var json = JsonSerializer.Serialize(debugData, DebugJsonSerializerOptions);
+            const string prefix = "Philips Hue bridge data received from HueApi:";
+            Console.WriteLine($"{prefix}{Environment.NewLine}{json}");
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Failed to dump Philips Hue bridge data for debugging.");
+        }
     }
 
     private async Task<bool> RetrieveDataAsync<T>(Func<Task<HueResponse<T>>> apiCall, Action<IList<T>> setData, string dataType)
