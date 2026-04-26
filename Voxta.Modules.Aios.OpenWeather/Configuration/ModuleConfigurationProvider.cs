@@ -7,6 +7,10 @@ namespace Voxta.Modules.Aios.OpenWeather.Configuration;
 public class ModuleConfigurationProvider : ModuleConfigurationProviderBase, IModuleConfigurationProvider
 {
     public static string[] FieldsRequiringReload => [ApiKey.Name];
+    private static readonly string DefaultTileCachePath = Path.Combine(
+        Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
+        "Voxta",
+        "Aios.OpenWeather");
 
     public static readonly FormPasswordField ApiKey = new()
     {
@@ -103,7 +107,7 @@ public class ModuleConfigurationProvider : ModuleConfigurationProviderBase, IMod
         Label = "Tile Cache Path",
         Required = true,
         Text = "The path to store the OpenStreetMap tile cache.",
-        DefaultValue = @"%LOCALAPPDATA%\Voxta\Aios.OpenWeather",
+        DefaultValue = DefaultTileCachePath,
         Advanced = true,
     };
 

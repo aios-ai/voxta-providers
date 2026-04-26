@@ -7,6 +7,11 @@ namespace Voxta.Modules.Aios.Spotify.Configuration;
 public class ModuleConfigurationProvider : ModuleConfigurationProviderBase, IModuleConfigurationProvider
 {
     public static string[] FieldsRequiringReload => [ClientId.Name, ClientSecret.Name];
+    private static readonly string DefaultTokenPath = Path.Combine(
+        Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
+        "Voxta",
+        "Aios.Spotify",
+        "Voxta.Modules.Aios.Spotify.Auth.json");
 
     public static readonly FormTextField ClientId = new()
     {
@@ -90,7 +95,7 @@ Daily Mix 6="
         Label = "Token Path",
         Required = true,
         Text = "The path to store the Spotify authentication token.",
-        DefaultValue = @"%LOCALAPPDATA%\Voxta\Aios.Spotify\Voxta.Modules.Aios.Spotify.Auth.json",
+        DefaultValue = DefaultTokenPath,
         Advanced = true,
     };
 

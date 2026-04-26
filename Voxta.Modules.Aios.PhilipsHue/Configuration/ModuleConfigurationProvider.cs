@@ -7,6 +7,11 @@ namespace Voxta.Modules.Aios.PhilipsHue.Configuration;
 public class ModuleConfigurationProvider : ModuleConfigurationProviderBase, IModuleConfigurationProvider
 {
     public static string[] FieldsRequiringReload => [BridgeIp.Name, BridgeUsername.Name];
+    private static readonly string DefaultAuthPath = Path.Combine(
+        Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
+        "Voxta",
+        "Aios.PhilipsHue",
+        "Voxta.Modules.Aios.PhilipsHue.Auth.json");
     
     public static readonly FormTextField BridgeIp = new()
     {
@@ -40,7 +45,7 @@ public class ModuleConfigurationProvider : ModuleConfigurationProviderBase, IMod
         Label = "Authentication Path",
         Required = true,
         Text = "The path to store the PhilipsHue authentication token.",
-        DefaultValue = @"%LOCALAPPDATA%\Voxta\Aios.PhilipsHue\Voxta.Modules.Aios.PhilipsHue.Auth.json",
+        DefaultValue = DefaultAuthPath,
         Advanced = true,
     };
 
