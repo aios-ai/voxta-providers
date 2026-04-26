@@ -150,7 +150,7 @@ public class PhilipsHueChatAugmentationsServiceInstance(
                                 Description = "PascalCase color name {{ char }} wants to change to."
                             }
                         ],
-                        Disabled = philipsHueChatAugmentationsServiceInstance.CharacterControlledLight == null
+                        Disabled = string.IsNullOrWhiteSpace(philipsHueChatAugmentationsServiceInstance.CharacterControlledLight)
                     },
                     new()
                     {
