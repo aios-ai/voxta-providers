@@ -48,14 +48,29 @@ public static class WeatherMapHelper
     
     public static string NormalizeLayer(string? requestedLayer)
     {
+        return TryNormalizeLayer(requestedLayer, out var normalizedLayer)
+            ? normalizedLayer
+            : "temp_new";
+    }
+
+    public static bool TryNormalizeLayer(string? requestedLayer, out string normalizedLayer)
+    {
         if (string.IsNullOrWhiteSpace(requestedLayer))
-            return "temp_new";
+        {
+            normalizedLayer = "";
+            return false;
+        }
 
         var key = requestedLayer.Trim();
 
-        return LayerMap.TryGetValue(key, out var mapped)
-            ? mapped
-            : "temp_new";
+        if (LayerMap.TryGetValue(key, out var mapped))
+        {
+            normalizedLayer = mapped;
+            return true;
+        }
+
+        normalizedLayer = "";
+        return false;
     }
     
     public static string ToDisplayName(string normalizedLayer)

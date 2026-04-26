@@ -1,5 +1,7 @@
+using System.Collections;
 using System.Globalization;
 using System.Text;
+using System.Text.Json;
 using System.Text.RegularExpressions;
 using Microsoft.Extensions.Logging;
 using Voxta.Abstractions.Chats.Sessions;
@@ -212,13 +214,8 @@ public class OpenWeatherChatAugmentationsServiceInstance(
 						await GetAirPollutionForecast(location, cancellationToken);
 					return true;
 				case "get_weather_map":
-					var locArg = GetSafeArgument(serverActionMessage, "get_map_location");
-					var target = ResolveMapTarget(locArg);
-
-					var rawLayer = GetSafeArgument(serverActionMessage, "get_map_layer");
-					var normalizedLayer = WeatherMapHelper.NormalizeLayer(rawLayer);
-
-					await GetWeatherMapAsync(target, normalizedLayer, cancellationToken);
+					var mapRequest = ResolveMapRequest(serverActionMessage);
+					await GetWeatherMapAsync(mapRequest.Target, mapRequest.Layer, cancellationToken);
 					return true;
 				default:
 					return false;
@@ -250,12 +247,12 @@ public class OpenWeatherChatAugmentationsServiceInstance(
 			var data = weatherData.Value!;
 			var rain = data.Rain?.OneHour ?? 0;
 			var rainPrecipitationText = rain > 0
-				? $" and estimated {rain:F1} mm/h precipitation of rain"
+				? $" and estimated {rain:0.#} mm/h precipitation of rain"
 				: "";
 
 			var snow = data.Snow?.OneHour ?? 0;
 			var snowPrecipitationText = snow > 0
-				? $" and estimated {snow:F1} mm/h precipitation of snow"
+				? $" and estimated {snow:0.#} mm/h precipitation of snow"
 				: "";
 
 			var unitSuffix = chatAugmentationsSettings.Units == "imperial" ? "°F" : "°C";
@@ -264,21 +261,21 @@ public class OpenWeatherChatAugmentationsServiceInstance(
 			var sb = new StringBuilder();
 
 			if (_weatherDetails.Contains("Temp"))
-				sb.Append($"The current temperature in {location} ({data.Sys.Country}) is {data.Main.Temp}{unitSuffix} ");
+				sb.Append($"The current temperature in {location} ({data.Sys.Country}) is {FormatWholeNumber(data.Main.Temp)}{unitSuffix} ");
 			else
 				sb.Append($"The current weather in {location} ({data.Sys.Country}) is ");
 			if (_weatherDetails.Contains("FeelsLike"))
-				sb.Append($"(feels like {data.Main.FeelsLike}{unitSuffix}) ");
+				sb.Append($"(feels like {FormatWholeNumber(data.Main.FeelsLike)}{unitSuffix}) ");
 			if (_weatherDetails.Contains("Condition"))
 				sb.Append($"with {data.Weather[0].Description}{rainPrecipitationText}{snowPrecipitationText}. ");
 			if (_weatherDetails.Contains("TempMinMax"))
-				sb.Append($"The temperature ranges between {data.Main.TempMin}-{data.Main.TempMax}{unitSuffix}. ");
+				sb.Append($"The temperature ranges between {FormatWholeNumber(data.Main.TempMin)}-{FormatWholeNumber(data.Main.TempMax)}{unitSuffix}. ");
 			if (_weatherDetails.Contains("Wind"))
-				sb.Append($"Wind: {data.Wind.Speed:0.#} m/s at {data.Wind.Deg}°. ");
+				sb.Append($"Wind: {data.Wind.Speed:0.#} m/s at {FormatWholeNumber(data.Wind.Deg)}°. ");
 			if (_weatherDetails.Contains("CloudCover"))
 				sb.Append($"Cloud cover: {data.Clouds.All}%. ");
-			if (_weatherDetails.Contains("Visibility"))
-				sb.Append($"Visibility: {data.Visibility / 1000.0:0.#} km. ");
+			if (_weatherDetails.Contains("Visibility") && data.Visibility is { } visibility)
+				sb.Append($"Visibility: {FormatWholeNumber(visibility / 1000.0)} km. ");
 
 			messageText = sb.ToString().Trim();
 
@@ -353,21 +350,21 @@ public class OpenWeatherChatAugmentationsServiceInstance(
 				sb.Append($"AQI {aqi} ({AirPollutionForecastSummariser.GetAqiLabel(aqi)}) ");
 			}
 			if (_pollutionDetails.Contains("CO"))
-				sb.Append($"CO: {components.Co} µg/m³, ");
+				sb.Append($"CO: {components.Co:0.#} µg/m³, ");
 			if (_pollutionDetails.Contains("NO"))
-				sb.Append($"NO: {components.No} µg/m³, ");
+				sb.Append($"NO: {components.No:0.#} µg/m³, ");
 			if (_pollutionDetails.Contains("NO2"))
-				sb.Append($"NO₂: {components.No2} µg/m³, ");
+				sb.Append($"NO₂: {components.No2:0.#} µg/m³, ");
 			if (_pollutionDetails.Contains("O3"))
-				sb.Append($"O₃: {components.O3} µg/m³, ");
+				sb.Append($"O₃: {components.O3:0.#} µg/m³, ");
 			if (_pollutionDetails.Contains("SO2"))
-				sb.Append($"SO₂: {components.So2} µg/m³, ");
+				sb.Append($"SO₂: {components.So2:0.#} µg/m³, ");
 			if (_pollutionDetails.Contains("PM2.5"))
-				sb.Append($"PM2.5: {components.Pm2_5} µg/m³, ");
+				sb.Append($"PM2.5: {components.Pm2_5:0.#} µg/m³, ");
 			if (_pollutionDetails.Contains("PM10"))
-				sb.Append($"PM10: {components.Pm10} µg/m³, ");
+				sb.Append($"PM10: {components.Pm10:0.#} µg/m³, ");
 			if (_pollutionDetails.Contains("NH3"))
-				sb.Append($"NH₃: {components.Nh3} µg/m³, ");
+				sb.Append($"NH₃: {components.Nh3:0.#} µg/m³, ");
 
 			messageText = sb.ToString().Trim().TrimEnd(',');
 
@@ -492,6 +489,61 @@ public class OpenWeatherChatAugmentationsServiceInstance(
 		return (MapTargetType.Global, "Global");
 	}
 
+	private ((MapTargetType Type, string Identifier) Target, string Layer) ResolveMapRequest(ServerActionMessage message)
+	{
+		var namedLayer = GetSafeArgument(message, "get_map_layer");
+		var namedLocation = GetSafeArgument(message, "get_map_location");
+		string? selectedLayer = null;
+		string? selectedLocation = null;
+
+		if (WeatherMapHelper.TryNormalizeLayer(namedLayer, out var layerFromLayerArg))
+			selectedLayer = layerFromLayerArg;
+
+		if (WeatherMapHelper.TryNormalizeLayer(namedLocation, out var layerFromLocationArg))
+		{
+			selectedLayer ??= layerFromLocationArg;
+			if (TryResolveMapTarget(namedLayer, out _))
+				selectedLocation = namedLayer;
+		}
+		else if (TryResolveMapTarget(namedLocation, out _))
+		{
+			selectedLocation = namedLocation;
+		}
+
+		if (selectedLocation == null && TryResolveMapTarget(namedLayer, out _))
+			selectedLocation = namedLayer;
+
+		foreach (var value in GetActionArgumentValues(message))
+		{
+			if (selectedLayer == null && WeatherMapHelper.TryNormalizeLayer(value, out var layerFromValue))
+			{
+				selectedLayer = layerFromValue;
+				continue;
+			}
+
+			if (selectedLocation == null && TryResolveMapTarget(value, out _))
+				selectedLocation = value;
+		}
+
+		return (ResolveMapTarget(selectedLocation), selectedLayer ?? "temp_new");
+	}
+
+	private bool TryResolveMapTarget(string? providedLocation, out (MapTargetType Type, string Identifier) target)
+	{
+		target = ResolveMapTarget(providedLocation);
+		return !string.IsNullOrWhiteSpace(providedLocation) &&
+			   (target.Type != MapTargetType.Global ||
+				string.Equals(target.Identifier, "Global", StringComparison.OrdinalIgnoreCase) &&
+				IsGlobalMapTarget(providedLocation));
+	}
+
+	private static bool IsGlobalMapTarget(string? value)
+	{
+		return string.Equals(value?.Trim(), "global", StringComparison.OrdinalIgnoreCase) ||
+			   string.Equals(value?.Trim(), "world", StringComparison.OrdinalIgnoreCase) ||
+			   string.Equals(value?.Trim(), "earth", StringComparison.OrdinalIgnoreCase);
+	}
+
 	private static string CleanLocationString(string input)
 	{
 		if (string.IsNullOrWhiteSpace(input))
@@ -507,10 +559,95 @@ public class OpenWeatherChatAugmentationsServiceInstance(
 	string? GetSafeArgument(ServerActionMessage msg, string argName)
 	{
 		return msg.TryGetArgument(argName, out var value) &&
-			   !string.IsNullOrWhiteSpace(value) &&
-			   !string.Equals(value, "undefined", StringComparison.OrdinalIgnoreCase)
+			   IsSafeArgumentValue(value)
 			? value
 			: null;
+	}
+
+	private static bool IsSafeArgumentValue(string? value)
+	{
+		return !string.IsNullOrWhiteSpace(value) &&
+			   !string.Equals(value, "undefined", StringComparison.OrdinalIgnoreCase) &&
+			   !string.Equals(value, "null", StringComparison.OrdinalIgnoreCase);
+	}
+
+	private static IEnumerable<string> GetActionArgumentValues(ServerActionMessage message)
+	{
+		var argumentsProperty = message.GetType().GetProperty("Arguments");
+		var arguments = argumentsProperty?.GetValue(message);
+
+		if (arguments is JsonElement jsonElement)
+		{
+			foreach (var jsonValue in GetJsonArgumentValues(jsonElement))
+				yield return jsonValue;
+			yield break;
+		}
+
+		if (arguments is not IEnumerable enumerable || arguments is string)
+			yield break;
+
+		foreach (var item in enumerable)
+		{
+			foreach (var value in GetObjectArgumentValues(item))
+				yield return value;
+		}
+	}
+
+	private static IEnumerable<string> GetObjectArgumentValues(object? item)
+	{
+		if (item == null)
+			yield break;
+
+		if (item is string stringValue)
+		{
+			if (IsSafeArgumentValue(stringValue))
+				yield return stringValue;
+			yield break;
+		}
+
+		if (item is JsonElement jsonElement)
+		{
+			foreach (var jsonValue in GetJsonArgumentValues(jsonElement))
+				yield return jsonValue;
+			yield break;
+		}
+
+		var valueProperty = item.GetType().GetProperty("Value");
+		var propertyValue = valueProperty?.GetValue(item);
+		if (propertyValue is string itemValue && IsSafeArgumentValue(itemValue))
+			yield return itemValue;
+	}
+
+	private static IEnumerable<string> GetJsonArgumentValues(JsonElement jsonElement)
+	{
+		if (jsonElement.ValueKind == JsonValueKind.Object)
+		{
+			foreach (var property in jsonElement.EnumerateObject())
+			{
+				if (property.Value.ValueKind == JsonValueKind.String &&
+					IsSafeArgumentValue(property.Value.GetString()))
+				{
+					yield return property.Value.GetString()!;
+				}
+			}
+		}
+		else if (jsonElement.ValueKind == JsonValueKind.Array)
+		{
+			foreach (var item in jsonElement.EnumerateArray())
+			{
+				foreach (var value in GetJsonArgumentValues(item))
+					yield return value;
+			}
+		}
+		else if (jsonElement.ValueKind == JsonValueKind.String && IsSafeArgumentValue(jsonElement.GetString()))
+		{
+			yield return jsonElement.GetString()!;
+		}
+	}
+
+	private static string FormatWholeNumber(double value)
+	{
+		return Math.Round(value).ToString("0", CultureInfo.InvariantCulture);
 	}
 
 	private async Task SendFailureAsync(string? userVisibleError, CancellationToken cancellationToken)
