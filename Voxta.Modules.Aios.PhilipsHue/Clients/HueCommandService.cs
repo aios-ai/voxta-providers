@@ -11,6 +11,8 @@ public class HueCommandService : IHueCommandService
     private readonly IHueDataService _dataService;
     private readonly ILogger<HueCommandService> _logger;
 
+    public string? LastUserVisibleError { get; private set; }
+
     public HueCommandService(
         IHueBridgeConnectionService connectionService,
         IHueDataService dataService,
@@ -21,145 +23,185 @@ public class HueCommandService : IHueCommandService
         _logger = logger;
     }
 
-    public async Task SendHueCommandAsync(Guid targetId, string type, bool? state = null, string? color = null, double? brightness = null, string? scene = null)
+    public async Task<bool> SendHueCommandAsync(Guid targetId, string type, bool? state = null, string? color = null, double? brightness = null, string? scene = null)
     {
         if (_connectionService.HueClient == null)
         {
             _logger.LogWarning("Hue client not initialized. Cannot send command.");
-            return;
+            LastUserVisibleError = _connectionService.LastUserVisibleError ?? "Hue is not connected. Please connect the Hue bridge before controlling lights.";
+            return false;
         }
 
-        if (type == "light")
+        try
         {
-            var lightCommand = new UpdateLight();
-            var updates = new List<string>();
+            if (type == "light")
+            {
+                var lightCommand = new UpdateLight();
+                var updates = new List<string>();
 
-            // Handle state change
-            if (state.HasValue)
-            {
-                lightCommand = state.Value ? lightCommand.TurnOn() : lightCommand.TurnOff();
-                updates.Add($"state: {state.Value}");
-            }
-
-            // Handle color change
-            if (!string.IsNullOrWhiteSpace(color))
-            {
-                var rgbColor = new RGBColor(color);
-                lightCommand = lightCommand.SetColor(rgbColor);
-                updates.Add($"color: {color}");
-            }
-
-            // Handle brightness change
-            if (brightness.HasValue)
-            {
-                lightCommand = lightCommand.SetBrightness(brightness.Value);
-                updates.Add($"brightness: {brightness.Value}");
-            }
-
-            if (updates.Any())
-            {
-                _ = await _connectionService.HueClient.Light.UpdateAsync(targetId, lightCommand);
-                _logger.LogInformation("Light '{TargetId}' updated with: {Join}", targetId, string.Join(", ", updates));
-            }
-            else
-            {
-                _logger.LogInformation("Light '{TargetId}' had no changes.", targetId);
-            }
-        }
-        else if (type is "group" or "room" or "zone")
-        {
-            // If a scene is specified, activate it
-            if (!string.IsNullOrWhiteSpace(scene))
-            {
-                // Prepare the scene recall request
-                var updateScene = new UpdateScene
+                if (state.HasValue)
                 {
-                    Recall = new Recall { Action = SceneRecallAction.active }
-                };
+                    lightCommand = state.Value ? lightCommand.TurnOn() : lightCommand.TurnOff();
+                    updates.Add($"state: {state.Value}");
+                }
 
-                // Activate the scene
-                var result = await _connectionService.HueClient.Scene.UpdateAsync(targetId, updateScene);
+                if (!string.IsNullOrWhiteSpace(color))
+                {
+                    var rgbColor = new RGBColor(color);
+                    lightCommand = lightCommand.SetColor(rgbColor);
+                    updates.Add($"color: {color}");
+                }
 
+                if (brightness.HasValue)
+                {
+                    lightCommand = lightCommand.SetBrightness(brightness.Value);
+                    updates.Add($"brightness: {brightness.Value}");
+                }
+
+                if (!updates.Any())
+                {
+                    _logger.LogInformation("Light '{TargetId}' had no changes.", targetId);
+                    LastUserVisibleError = "No Hue light changes were requested.";
+                    return false;
+                }
+
+                var result = await _connectionService.HueClient.Light.UpdateAsync(targetId, lightCommand);
                 if (!result.HasErrors)
                 {
-                    _logger.LogInformation("Scene '{Scene}' activated successfully.", scene);
+                    _logger.LogInformation("Light '{TargetId}' updated with: {Join}", targetId, string.Join(", ", updates));
+                    LastUserVisibleError = null;
+                    return true;
                 }
-                else
+
+                _logger.LogWarning("Failed to update light '{TargetId}': {ResultErrors}", targetId, result.Errors);
+                LastUserVisibleError = "The Hue bridge rejected the light command. Please check that the light is available.";
+                return false;
+            }
+
+            if (type is "group" or "room" or "zone")
+            {
+                if (!string.IsNullOrWhiteSpace(scene))
                 {
-                    _logger.LogWarning("Failed to activate scene '{Scene}': {ResultErrors}", scene, result.Errors);
+                    var updateScene = new UpdateScene
+                    {
+                        Recall = new Recall { Action = SceneRecallAction.active }
+                    };
+
+                    var sceneResult = await _connectionService.HueClient.Scene.UpdateAsync(targetId, updateScene);
+
+                    if (!sceneResult.HasErrors)
+                    {
+                        _logger.LogInformation("Scene '{Scene}' activated successfully.", scene);
+                        LastUserVisibleError = null;
+                        return true;
+                    }
+
+                    _logger.LogWarning("Failed to activate scene '{Scene}': {ResultErrors}", scene, sceneResult.Errors);
+                    LastUserVisibleError = $"Hue could not activate the scene {scene}. Please check that the scene is available for that room or zone.";
+                    return false;
                 }
-                return;
+
+                var hueCommand = new UpdateGroupedLight();
+                var updates = new List<string>();
+
+                if (state.HasValue)
+                {
+                    hueCommand = state.Value ? hueCommand.TurnOn() : hueCommand.TurnOff();
+                    updates.Add($"state: {state.Value}");
+                }
+
+                if (!string.IsNullOrWhiteSpace(color))
+                {
+                    var rgbColor = new RGBColor(color);
+                    hueCommand = hueCommand.SetColor(rgbColor);
+                    updates.Add($"color: {color}");
+                }
+
+                if (brightness.HasValue)
+                {
+                    hueCommand = hueCommand.SetBrightness(brightness.Value);
+                    updates.Add($"brightness: {brightness.Value}");
+                }
+
+                if (!updates.Any())
+                {
+                    _logger.LogInformation("Group/Room '{TargetId}' had no changes.", targetId);
+                    LastUserVisibleError = "No Hue group or room changes were requested.";
+                    return false;
+                }
+
+                var result = await _connectionService.HueClient.GroupedLight.UpdateAsync(targetId, hueCommand);
+                if (!result.HasErrors)
+                {
+                    _logger.LogInformation("Group/Room '{TargetId}' updated with: {Join}", targetId, string.Join(", ", updates));
+                    LastUserVisibleError = null;
+                    return true;
+                }
+
+                _logger.LogWarning("Failed to update group/room '{TargetId}': {ResultErrors}", targetId, result.Errors);
+                LastUserVisibleError = "The Hue bridge rejected the group or room command. Please check that the target is available.";
+                return false;
             }
 
-            var hueCommand = new UpdateGroupedLight();
-            var updates = new List<string>();
-
-            // Handle state change
-            if (state.HasValue)
-            {
-                hueCommand = state.Value ? hueCommand.TurnOn() : hueCommand.TurnOff();
-                updates.Add($"state: {state.Value}");
-            }
-
-            // Handle color change
-            if (!string.IsNullOrWhiteSpace(color))
-            {
-                var rgbColor = new RGBColor(color);
-                hueCommand = hueCommand.SetColor(rgbColor);
-                updates.Add($"color: {color}");
-            }
-
-            // Handle brightness change
-            if (brightness.HasValue)
-            {
-                hueCommand = hueCommand.SetBrightness(brightness.Value);
-                updates.Add($"brightness: {brightness.Value}");
-            }
-
-            if (updates.Any())
-            {
-                _ = await _connectionService.HueClient.GroupedLight.UpdateAsync(targetId, hueCommand);
-                _logger.LogInformation("Group/Room '{TargetId}' updated with: {Join}", targetId, string.Join(", ", updates));
-            }
-            else
-            {
-                _logger.LogInformation("Group/Room '{TargetId}' had no changes.", targetId);
-            }
-        }
-        else if (type == "entertainment_configuration")
-        {
-            var hueCommand = new UpdateEntertainmentConfiguration();
-            var updates = new List<string>();
-
-            if (updates.Any())
-            {
-                _ = await _connectionService.HueClient.EntertainmentConfiguration.UpdateAsync(targetId, hueCommand);
-                _logger.LogInformation("Entertainment Configuration '{TargetId}' updated with: {Join}", targetId, string.Join(", ", updates));
-            }
-            else
-            {
-                _logger.LogInformation("Entertainment Configuration '{TargetId}' had no changes.", targetId);
-            }
-        }
-        else
-        {
             _logger.LogWarning("Invalid type '{Type}' provided.", type);
+            LastUserVisibleError = $"Hue target type '{type}' is not supported.";
+            return false;
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Hue command failed for target '{TargetId}' of type '{Type}'.", targetId, type);
+            LastUserVisibleError = "Hue could not complete that command. Please check the bridge and target light, then try again.";
+            return false;
         }
     }
 
-    public async Task ControlAllLightsAsync(bool turnOn)
+    public async Task<bool> ControlAllLightsAsync(bool turnOn)
     {
         if (_connectionService.HueClient == null)
         {
             _logger.LogWarning("Hue client not initialized. Cannot control all lights.");
-            return;
+            LastUserVisibleError = _connectionService.LastUserVisibleError ?? "Hue is not connected. Please connect the Hue bridge before controlling lights.";
+            return false;
         }
 
+        if (!_dataService.Lights.Any())
+        {
+            LastUserVisibleError = "No Hue lights are available to control.";
+            return false;
+        }
+
+        var anySucceeded = false;
+        var anyFailed = false;
         foreach (var light in _dataService.Lights)
         {
-            var lightCommand = turnOn ? new UpdateLight().TurnOn() : new UpdateLight().TurnOff();
-            _ = await _connectionService.HueClient.Light.UpdateAsync(light.Id, lightCommand);
-            _logger.LogInformation("Turned light {State}: {MetadataName}", turnOn ? "on" : "off", light.Metadata?.Name);
+            try
+            {
+                var lightCommand = turnOn ? new UpdateLight().TurnOn() : new UpdateLight().TurnOff();
+                var result = await _connectionService.HueClient.Light.UpdateAsync(light.Id, lightCommand);
+                if (result.HasErrors)
+                {
+                    anyFailed = true;
+                    _logger.LogWarning("Failed to turn light {State}: {MetadataName}. Errors: {ResultErrors}", turnOn ? "on" : "off", light.Metadata?.Name, result.Errors);
+                    continue;
+                }
+
+                anySucceeded = true;
+                _logger.LogInformation("Turned light {State}: {MetadataName}", turnOn ? "on" : "off", light.Metadata?.Name);
+            }
+            catch (Exception ex)
+            {
+                anyFailed = true;
+                _logger.LogWarning(ex, "Failed to turn light {State}: {MetadataName}", turnOn ? "on" : "off", light.Metadata?.Name);
+            }
         }
+
+        if (anySucceeded)
+        {
+            LastUserVisibleError = anyFailed ? "Some Hue lights could not be controlled. Please check unavailable lights in the Hue app." : null;
+            return true;
+        }
+
+        LastUserVisibleError = "Hue could not control any lights. Please check that the bridge and lights are available.";
+        return false;
     }
 }

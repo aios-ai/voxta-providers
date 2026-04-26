@@ -14,6 +14,9 @@ public class HueManager
 
     public string? LastUserMessage { get; set; }
     public bool IsConnected => _bridgeConnectionService.IsConnected;
+    public bool IsAuthorizationRequired => _bridgeConnectionService.IsAuthorizationRequired;
+    public HueBridgeState State { get; private set; } = HueBridgeState.Disconnected;
+    public string? LastUserVisibleError { get; private set; }
 
     public HueManager(
         IHueBridgeConnectionService bridgeConnectionService,
@@ -31,12 +34,39 @@ public class HueManager
         _logger = logger;
     }
 
-    public async Task InitializeAsync(CancellationToken cancellationToken)
+    public async Task<bool> InitializeAsync(CancellationToken cancellationToken)
     {
-        await _bridgeConnectionService.InitializeBridgeAsync(cancellationToken);
-        if (_bridgeConnectionService.IsConnected)
+        try
         {
-            await _dataService.RetrieveBridgeDataAsync();
+            var connected = await _bridgeConnectionService.InitializeBridgeAsync(cancellationToken);
+            State = _bridgeConnectionService.State;
+            LastUserVisibleError = _bridgeConnectionService.LastUserVisibleError;
+
+            if (!connected)
+                return false;
+
+            var dataLoaded = await _dataService.RetrieveBridgeDataAsync();
+            LastUserVisibleError = _dataService.LastUserVisibleError;
+            if (!dataLoaded)
+            {
+                State = HueBridgeState.Unavailable;
+                return false;
+            }
+
+            State = HueBridgeState.Connected;
+            LastUserVisibleError = null;
+            return true;
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            throw;
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Hue initialization failed unexpectedly.");
+            State = HueBridgeState.Unavailable;
+            LastUserVisibleError = "Hue could not initialize. Please check the bridge connection and try again.";
+            return false;
         }
     }
 
@@ -50,14 +80,26 @@ public class HueManager
         return _colorConverterService.TranslateColorNameToHex(colorName);
     }
 
-    public async Task SendHueCommandAsync(Guid targetId, string type, bool? state = null, string? color = null, double? brightness = null, string? scene = null)
+    public async Task<bool> SendHueCommandAsync(Guid targetId, string type, bool? state = null, string? color = null, double? brightness = null, string? scene = null)
     {
-        await _commandService.SendHueCommandAsync(targetId, type, state, color, brightness, scene);
+        var succeeded = await _commandService.SendHueCommandAsync(targetId, type, state, color, brightness, scene);
+        LastUserVisibleError = _commandService.LastUserVisibleError ?? _bridgeConnectionService.LastUserVisibleError;
+        State = succeeded ? HueBridgeState.Connected : _bridgeConnectionService.State;
+        return succeeded;
     }
 
-    public async Task ControlAllLightsAsync(bool turnOn)
+    public async Task<bool> ControlAllLightsAsync(bool turnOn)
     {
-        await _commandService.ControlAllLightsAsync(turnOn);
+        var succeeded = await _commandService.ControlAllLightsAsync(turnOn);
+        LastUserVisibleError = _commandService.LastUserVisibleError ?? _bridgeConnectionService.LastUserVisibleError;
+        State = succeeded ? HueBridgeState.Connected : _bridgeConnectionService.State;
+        return succeeded;
+    }
+
+    public void SetNoActiveTarget(string message)
+    {
+        State = HueBridgeState.NoActiveTarget;
+        LastUserVisibleError = message;
     }
 
     public IList<Light> GetLights() => _dataService.Lights;

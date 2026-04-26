@@ -24,6 +24,9 @@ public class HueBridgeConnectionService : IHueBridgeConnectionService
 
     public LocalHueApi? HueClient => _hueClient;
     public bool IsConnected => _hueClient != null;
+    public bool IsAuthorizationRequired => State == HueBridgeState.AuthRequired;
+    public HueBridgeState State { get; private set; } = HueBridgeState.Disconnected;
+    public string? LastUserVisibleError { get; private set; }
 
     public HueBridgeConnectionService(
         ILogger<HueBridgeConnectionService> logger,
@@ -37,7 +40,7 @@ public class HueBridgeConnectionService : IHueBridgeConnectionService
         _authPath = authPath;
     }
 
-    public async Task InitializeBridgeAsync(CancellationToken cancellationToken)
+    public async Task<bool> InitializeBridgeAsync(CancellationToken cancellationToken)
     {
         _logger.LogInformation("Initializing Hue Bridge...");
 
@@ -53,40 +56,59 @@ public class HueBridgeConnectionService : IHueBridgeConnectionService
                 {
                     _hueClient = new LocalHueApi(_bridgeIp, appKey.Username);
                     _logger.LogInformation("Connected to Hue bridge using saved configuration.");
-                    await _session.SetFlags(SetFlagRequest.ParseFlags(["hueBridge_connected", "!hueBridge_disconnected"]), cancellationToken);
-                    return;
+                    await SetStateAsync(HueBridgeState.Connected, null, cancellationToken);
+                    return true;
                 }
                 catch (Exception ex)
                 {
                     _logger.LogWarning(ex, "Failed to connect to the Hue bridge using saved configuration. Falling back to discovery...");
+                    await SetStateAsync(HueBridgeState.Unavailable, "The saved Hue bridge connection could not be reached. I will try to discover the bridge again.", cancellationToken);
                 }
+            }
+            else
+            {
+                await SetStateAsync(HueBridgeState.AuthRequired, "Hue authorization is incomplete. Please press the Hue bridge link button when Voxta asks for authorization.", cancellationToken);
             }
         }
         else
         {
             _logger.LogInformation("No Authentication file found. Starting bridge discovery...");
+            await SetStateAsync(HueBridgeState.AuthRequired, "Hue authorization is required. Please press the Hue bridge link button when Voxta asks for authorization.", cancellationToken);
         }
 
-        await DiscoverAndConnectBridgeAsync(cancellationToken);
+        return await DiscoverAndConnectBridgeAsync(cancellationToken);
     }
 
-    private async Task DiscoverAndConnectBridgeAsync(CancellationToken cancellationToken)
+    private async Task<bool> DiscoverAndConnectBridgeAsync(CancellationToken cancellationToken)
     {
         var retryCount = 0;
         _logger.LogInformation("Discovering Hue bridge...");
 
         while (retryCount < MaxRetries)
         {
-            var bridgeLocator = new HttpBridgeLocator();
-            var bridges = (await bridgeLocator.LocateBridgesAsync(TimeSpan.FromSeconds(RetryIntervalSeconds))).ToArray();
+            LocatedBridge[] bridges;
+            try
+            {
+                var bridgeLocator = new HttpBridgeLocator();
+                bridges = (await bridgeLocator.LocateBridgesAsync(TimeSpan.FromSeconds(RetryIntervalSeconds))).ToArray();
+            }
+            catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+            {
+                throw;
+            }
+            catch (Exception ex)
+            {
+                _logger.LogWarning(ex, "Hue bridge discovery failed.");
+                await SetStateAsync(HueBridgeState.Unavailable, "Hue bridge discovery failed. Please check that Voxta is on the same network as the Hue bridge.", cancellationToken);
+                return false;
+            }
 
             if (bridges.Length != 0)
             {
                 var bridgeInfo = bridges.First();
                 _bridgeIp = bridgeInfo.IpAddress;
                 _logger.LogInformation("Bridge discovered: {BridgeIp}", _bridgeIp);
-                await ConnectBridgeAsync(cancellationToken);
-                return;
+                return await ConnectBridgeAsync(cancellationToken);
             }
 
             _logger.LogWarning("No Hue bridges found. Retrying...");
@@ -95,14 +117,17 @@ public class HueBridgeConnectionService : IHueBridgeConnectionService
         }
 
         _logger.LogWarning("Max retries reached. No Hue bridges found.");
+        await SetStateAsync(HueBridgeState.Unavailable, "No Hue bridge was found. Please check that the bridge is powered on and on the same network as Voxta.", cancellationToken);
+        return false;
     }
 
-    private async Task ConnectBridgeAsync(CancellationToken cancellationToken)
+    private async Task<bool> ConnectBridgeAsync(CancellationToken cancellationToken)
     {
         if (string.IsNullOrEmpty(_bridgeIp))
         {
             _logger.LogWarning("No bridge discovered.");
-            return;
+            await SetStateAsync(HueBridgeState.Unavailable, "No Hue bridge was found. Please check that it is powered on and on the same network as Voxta.", cancellationToken);
+            return false;
         }
 
         var savedAppKey = LoadAppKey();
@@ -112,22 +137,24 @@ public class HueBridgeConnectionService : IHueBridgeConnectionService
             {
                 _hueClient = new LocalHueApi(_bridgeIp, savedAppKey.Username);
                 _logger.LogInformation("Connected to Hue bridge using saved app key...");
-                await _session.SetFlags(SetFlagRequest.ParseFlags(["hueBridge_connected", "!hueBridge_disconnected"]), cancellationToken);
-                return;
+                await SetStateAsync(HueBridgeState.Connected, null, cancellationToken);
+                return true;
             }
             catch (Exception ex)
             {
                 _logger.LogWarning(ex, "Failed to connect to the Hue bridge using saved app key. Falling back to registration...");
+                await SetStateAsync(HueBridgeState.AuthRequired, "The saved Hue authorization could not be used. Please press the Hue bridge link button when Voxta asks for authorization.", cancellationToken);
             }
         }
 
-        await AttemptBridgeRegistrationAsync(cancellationToken);
+        return await AttemptBridgeRegistrationAsync(cancellationToken);
     }
 
-    private async Task AttemptBridgeRegistrationAsync(CancellationToken cancellationToken)
+    private async Task<bool> AttemptBridgeRegistrationAsync(CancellationToken cancellationToken)
     {
         await using var _ = await _userInteractionWrapper.RequestUserInteraction(cancellationToken);
-        
+        await SetStateAsync(HueBridgeState.AuthRequired, "Hue authorization is required. Please press the link button on the Hue bridge.", cancellationToken);
+
         var registrationSuccessful = false;
         var retryDelay = TimeSpan.FromSeconds(RetryIntervalSeconds);
         var retries = 0;
@@ -137,69 +164,110 @@ public class HueBridgeConnectionService : IHueBridgeConnectionService
             try
             {
                 var appKey = await LocalHueApi.RegisterAsync(_bridgeIp!, "Voxta", Environment.MachineName, false);
-                await SaveAppKey(appKey);
+                if (!await SaveAppKey(appKey))
+                    return false;
+
                 _logger.LogInformation("Bridge connected and app key saved.");
-
-                _hueClient = new LocalHueApi(_bridgeIp, appKey.Username);
-                await _session.SetFlags(SetFlagRequest.ParseFlags(["hueBridge_connected", "!hueBridge_disconnected"]), cancellationToken);
-
+                _hueClient = new LocalHueApi(_bridgeIp!, appKey!.Username);
+                await SetStateAsync(HueBridgeState.Connected, null, cancellationToken);
                 registrationSuccessful = true;
             }
             catch (LinkButtonNotPressedException)
             {
-                if (cancellationToken.IsCancellationRequested) break;
-                
+                if (cancellationToken.IsCancellationRequested)
+                    break;
+
                 retries++;
                 _logger.LogWarning("Link button not pressed. Attempt {Retries} of {MaxRetries}. Retrying in {RetryDelaySeconds} seconds.", retries, MaxRetries, retryDelay.Seconds);
                 await Task.Delay(retryDelay, cancellationToken);
-                
             }
             catch (Exception ex)
             {
                 _logger.LogError(ex, "Failed to register with the Hue bridge.");
-                return;
+                await SetStateAsync(HueBridgeState.Unavailable, "Hue authorization failed while contacting the bridge. Please check the bridge and try again.", cancellationToken);
+                return false;
             }
         }
-        
+
         if (!registrationSuccessful && !cancellationToken.IsCancellationRequested)
         {
             _logger.LogError("Failed to register with Hue Bridge after {MaxRetries} retries.", MaxRetries);
+            await SetStateAsync(HueBridgeState.AuthRequired, "Hue authorization timed out. Please press the Hue bridge link button and try again.", cancellationToken);
         }
+
+        return registrationSuccessful;
     }
-    
+
     private RegisterEntertainmentResult? LoadAppKey()
     {
-        if (File.Exists(_authPath))
+        if (!File.Exists(_authPath))
+            return null;
+
+        try
         {
             return JsonSerializer.Deserialize<RegisterEntertainmentResult>(File.ReadAllText(_authPath));
         }
-        return null;
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Failed to load Hue authentication file.");
+            LastUserVisibleError = "The Hue authorization file could not be read. Please authorize Hue again.";
+            State = HueBridgeState.AuthRequired;
+            return null;
+        }
     }
 
-    private async Task SaveAppKey(RegisterEntertainmentResult? appKey)
+    private async Task<bool> SaveAppKey(RegisterEntertainmentResult? appKey)
     {
         if (appKey == null)
         {
             _logger.LogError("AppKey is null. Cannot save to file.");
-            return;
+            LastUserVisibleError = "Hue authorization returned no app key. Please try authorizing again.";
+            State = HueBridgeState.AuthRequired;
+            return false;
         }
 
         try
         {
             var directory = Path.GetDirectoryName(_authPath);
             if (!string.IsNullOrEmpty(directory) && !Directory.Exists(directory))
-            {
                 Directory.CreateDirectory(directory);
-            }
 
             var json = JsonSerializer.Serialize(appKey);
             await File.WriteAllTextAsync(_authPath, json);
             _logger.LogInformation("App key saved to file.");
+            return true;
         }
         catch (Exception ex)
         {
             _logger.LogError(ex, "Failed to save app key to file: {Message}", ex.Message);
+            LastUserVisibleError = "Hue was authorized, but Voxta could not save the authorization file. Please check the configured auth path.";
+            State = HueBridgeState.MissingConfiguration;
+            return false;
+        }
+    }
+
+    private async Task SetStateAsync(HueBridgeState state, string? userVisibleError, CancellationToken cancellationToken)
+    {
+        State = state;
+        LastUserVisibleError = userVisibleError;
+        if (state != HueBridgeState.Connected)
+            _hueClient = null;
+
+        var flags = state == HueBridgeState.Connected
+            ? new[] { "hueBridge_connected", "!hueBridge_disconnected" }
+            : ["hueBridge_disconnected", "!hueBridge_connected"];
+
+        try
+        {
+            await _session.SetFlags(SetFlagRequest.ParseFlags(flags), cancellationToken);
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
             throw;
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Failed to update Hue bridge state flags.");
         }
     }
 }

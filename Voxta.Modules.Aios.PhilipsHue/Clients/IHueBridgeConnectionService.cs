@@ -6,6 +6,9 @@ public interface IHueBridgeConnectionService
 {
     LocalHueApi? HueClient { get; }
     bool IsConnected { get; }
+    bool IsAuthorizationRequired { get; }
+    HueBridgeState State { get; }
+    string? LastUserVisibleError { get; }
 
-    Task InitializeBridgeAsync(CancellationToken cancellationToken);
+    Task<bool> InitializeBridgeAsync(CancellationToken cancellationToken);
 }

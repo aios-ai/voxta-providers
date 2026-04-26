@@ -14,6 +14,7 @@ public class HueDataService : IHueDataService
     private IList<Zone>? _zones;
     private IList<Scene>? _scenes;
 
+    public string? LastUserVisibleError { get; private set; }
     public IList<Light> Lights => _lights ??= new List<Light>();
     public IList<GroupedLight> Groups => _groups ??= new List<GroupedLight>();
     public IList<Room> Rooms => _rooms ??= new List<Room>();
@@ -28,21 +29,27 @@ public class HueDataService : IHueDataService
         _logger = logger;
     }
 
-    public async Task RetrieveBridgeDataAsync()
+    public async Task<bool> RetrieveBridgeDataAsync()
     {
-        await GetLightsAsync();
-        await GetGroupsAsync();
-        await GetRoomsAsync();
-        await GetZonesAsync();
-        await GetScenesAsync();
+        var results = new[]
+        {
+            await GetLightsAsync(),
+            await GetGroupsAsync(),
+            await GetRoomsAsync(),
+            await GetZonesAsync(),
+            await GetScenesAsync()
+        };
+
+        return results.All(x => x);
     }
 
-    private async Task RetrieveDataAsync<T>(Func<Task<HueResponse<T>>> apiCall, Action<IList<T>> setData, string dataType)
+    private async Task<bool> RetrieveDataAsync<T>(Func<Task<HueResponse<T>>> apiCall, Action<IList<T>> setData, string dataType)
     {
         if (_connectionService.HueClient == null)
         {
             _logger.LogWarning("Hue client not initialized. Cannot retrieve {DataType}.", dataType);
-            return;
+            LastUserVisibleError = _connectionService.LastUserVisibleError ?? "Hue is not connected. Please connect the Hue bridge before controlling lights.";
+            return false;
         }
 
         try
@@ -53,58 +60,63 @@ public class HueDataService : IHueDataService
             if (data.Count == 0)
             {
                 _logger.LogWarning("No {DataType} retrieved.", dataType);
-                return;
+                LastUserVisibleError = $"No Hue {dataType} were found on the bridge.";
+                return false;
             }
 
             setData(data);
+            LastUserVisibleError = null;
 
             _logger.LogInformation("Retrieved {DataCount} {DataType}.", data.Count, dataType);
+            return true;
         }
         catch (Exception ex)
         {
-            _logger.LogError("Error retrieving {DataType}: {ExMessage}", dataType, ex.Message);
+            _logger.LogError(ex, "Error retrieving {DataType}.", dataType);
+            LastUserVisibleError = $"Hue {dataType} could not be loaded. Please check the Hue bridge connection and try again.";
+            return false;
         }
     }
 
-    private async Task GetLightsAsync()
+    private async Task<bool> GetLightsAsync()
     {
-        await RetrieveDataAsync(
+        return await RetrieveDataAsync(
             _connectionService.HueClient!.Light.GetAllAsync,
             data => _lights = data,
             "lights"
         );
     }
 
-    private async Task GetGroupsAsync()
+    private async Task<bool> GetGroupsAsync()
     {
-        await RetrieveDataAsync(
+        return await RetrieveDataAsync(
             _connectionService.HueClient!.GroupedLight.GetAllAsync,
             data => _groups = data,
             "groups"
         );
     }
 
-    private async Task GetRoomsAsync()
+    private async Task<bool> GetRoomsAsync()
     {
-        await RetrieveDataAsync(
+        return await RetrieveDataAsync(
             _connectionService.HueClient!.Room.GetAllAsync,
             data => _rooms = data,
             "rooms"
         );
     }
 
-    private async Task GetZonesAsync()
+    private async Task<bool> GetZonesAsync()
     {
-        await RetrieveDataAsync(
+        return await RetrieveDataAsync(
             _connectionService.HueClient!.Zone.GetAllAsync,
             data => _zones = data,
             "zones"
         );
     }
 
-    private async Task GetScenesAsync()
+    private async Task<bool> GetScenesAsync()
     {
-        await RetrieveDataAsync(
+        return await RetrieveDataAsync(
             _connectionService.HueClient!.Scene.GetAllAsync,
             data => _scenes = data,
             "scenes"

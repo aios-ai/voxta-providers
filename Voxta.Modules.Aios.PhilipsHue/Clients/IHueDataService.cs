@@ -9,6 +9,7 @@ public interface IHueDataService
     IList<Room> Rooms { get; }
     IList<Zone> Zones { get; }
     IList<Scene> Scenes { get; }
+    string? LastUserVisibleError { get; }
 
-    Task RetrieveBridgeDataAsync();
+    Task<bool> RetrieveBridgeDataAsync();
 }

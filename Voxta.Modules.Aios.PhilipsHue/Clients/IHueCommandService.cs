@@ -2,6 +2,7 @@ namespace Voxta.Modules.Aios.PhilipsHue.Clients;
 
 public interface IHueCommandService
 {
-    Task SendHueCommandAsync(Guid targetId, string type, bool? state = null, string? color = null, double? brightness = null, string? scene = null);
-    Task ControlAllLightsAsync(bool turnOn);
+    string? LastUserVisibleError { get; }
+    Task<bool> SendHueCommandAsync(Guid targetId, string type, bool? state = null, string? color = null, double? brightness = null, string? scene = null);
+    Task<bool> ControlAllLightsAsync(bool turnOn);
 }
