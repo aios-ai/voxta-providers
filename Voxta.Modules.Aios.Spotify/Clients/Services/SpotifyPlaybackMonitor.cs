@@ -5,7 +5,6 @@ using SpotifyAPI.Web;
 using Voxta.Abstractions.Chats.Objects.Chats;
 using Voxta.Abstractions.Chats.Sessions;
 using Voxta.Model.Shared;
-using Voxta.Modules.Aios.Spotify.Helpers;
 
 namespace Voxta.Modules.Aios.Spotify.Clients.Services;
 
@@ -90,7 +89,6 @@ public class SpotifyPlaybackMonitor(
                 }
                 else if (hasTrack && !(_lastKnownState?.Item is FullTrack)) hasChanges = true;
 
-                if (hasTrack && _lastKnownState != null && HasPositionChanged(PlaybackState!, _lastKnownState!)) hasChanges = true;
                 if (_lastKnownState != null && HasVolumeChanged(PlaybackState!, _lastKnownState!)) hasChanges = true;
 
                 if (flags.Any())
@@ -194,12 +192,6 @@ public class SpotifyPlaybackMonitor(
 
                 AddContext(contexts, "album", "Spotify Album", albumText);
             }
-
-            AddContext(
-                contexts,
-                "progress",
-                "Spotify Song Progress",
-                $"Spotify song progress: {StringUtils.FormatMillisecondsToMinutesSeconds(playbackState.ProgressMs)} / {StringUtils.FormatMillisecondsToMinutesSeconds(track.DurationMs)}.");
         }
 
         if (!string.IsNullOrWhiteSpace(_lastAction))
@@ -226,31 +218,9 @@ public class SpotifyPlaybackMonitor(
         return new Guid(bytes);
     }
 
-    private bool HasConnectionStateChanged(CurrentlyPlayingContext newState, CurrentlyPlayingContext oldState)
-    {
-        return newState?.Device?.IsActive != oldState?.Device?.IsActive;
-    }
-
-    private bool HasPlaybackStateChanged(CurrentlyPlayingContext newState, CurrentlyPlayingContext oldState)
-    {
-        return newState?.IsPlaying != oldState?.IsPlaying;
-    }
-
-    private bool HasTrackChanged(CurrentlyPlayingContext newState, CurrentlyPlayingContext oldState)
-    {
-        return newState?.Item is FullTrack newTrack && oldState?.Item is FullTrack oldTrack && newTrack.Id != oldTrack.Id;
-    }
-
     private bool HasVolumeChanged(CurrentlyPlayingContext newState, CurrentlyPlayingContext oldState)
     {
         return newState?.Device?.VolumePercent != oldState?.Device?.VolumePercent;
-    }
-
-    private bool HasPositionChanged(CurrentlyPlayingContext newState, CurrentlyPlayingContext oldState)
-    {
-        return newState?.Item is FullTrack newTrack && oldState?.Item is FullTrack oldTrack &&
-               newTrack.Id == oldTrack.Id &&
-               Math.Abs(newState.ProgressMs - oldState.ProgressMs) > 1000;
     }
 
 }
