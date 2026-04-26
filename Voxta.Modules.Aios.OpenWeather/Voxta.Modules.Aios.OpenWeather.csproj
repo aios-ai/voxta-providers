@@ -17,6 +17,8 @@
     <ItemGroup>
       <None Remove="Data\countries.csv" />
       <EmbeddedResource Include="Data\countries.csv" />
+      <None Remove="Data\bounding-boxes.json" />
+      <EmbeddedResource Include="Data\bounding-boxes.json" />
       <None Remove="Assets\OpenWeather.png" />
       <EmbeddedResource Include="Assets\OpenWeather.png" />
     </ItemGroup>

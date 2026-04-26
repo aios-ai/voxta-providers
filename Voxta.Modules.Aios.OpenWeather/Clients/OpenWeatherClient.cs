@@ -270,97 +270,63 @@ public class OpenWeatherClient(
 
         try
         {
-        var tileFetcher = new TileFetcher(httpClient, cacheDir);
-        
-        int zoom;
-        int gridSize;
-        int tileSize = 256;
-        int centerX = 0, centerY = 0;
-        (double Lat, double Lon) centroid;
-
-        switch (target.Type)
-        {
-            case OpenWeatherChatAugmentationsServiceInstance.MapTargetType.Global:
-                zoom = 2;
-                gridSize = 1 << zoom;
-                break;
-
-            case OpenWeatherChatAugmentationsServiceInstance.MapTargetType.Continent:
-                zoom = 3;
-                gridSize = 4;
-
-                if (CountryCentroids.TryGet(target.Identifier, out centroid))
-                {
-                    centerX = LonToTileX(centroid.Lon, zoom);
-                    centerY = LatToTileY(centroid.Lat, zoom);
-                }
-                else
-                {
-                    logger.LogWarning("No centroid found for continent code {Code}", target.Identifier);
-                    return Fail<byte[]>(OpenWeatherOperationState.MissingResource, $"No map target was found for {target.Identifier}.");
-                }
-                break;
-            case OpenWeatherChatAugmentationsServiceInstance.MapTargetType.Country:
-                zoom = 5;
-                gridSize = 3;
-
-                if (CountryCentroids.TryGet(target.Identifier, out centroid))
-                {
-                    centerX = LonToTileX(centroid.Lon, zoom);
-                    centerY = LatToTileY(centroid.Lat, zoom);
-                }
-                else
-                {
-                    logger.LogWarning("No centroid found for country code {Code}", target.Identifier);
-                    return Fail<byte[]>(OpenWeatherOperationState.MissingResource, $"No map target was found for {target.Identifier}.");
-                }
-                break;
-
-            default:
-                logger.LogWarning("Unsupported map target type");
-                return Fail<byte[]>(OpenWeatherOperationState.MissingResource, "The requested weather map target is not supported.");
-        }
-
-        using var stitched = new Image<Rgba32>(tileSize * gridSize, tileSize * gridSize);
-
-        if (target.Type == OpenWeatherChatAugmentationsServiceInstance.MapTargetType.Global)
-        {
-            // Render the whole world
-            for (int x = 0; x < gridSize; x++)
+            var tileFetcher = new TileFetcher(httpClient, cacheDir);
+            var maybePlan = CreateWeatherMapPlan(target);
+            if (maybePlan is not { } plan)
             {
-                for (int y = 0; y < gridSize; y++)
+                logger.LogWarning("No map bounds found for {TargetType} {Identifier}", target.Type, target.Identifier);
+                return Fail<byte[]>(OpenWeatherOperationState.MissingResource, $"No map target was found for {target.Identifier}.");
+            }
+
+            var compositeCacheKey =
+                $"{target.Type}_{target.Identifier}_{layer}_z{plan.Zoom}_x{plan.MinX}-{plan.MaxX}_y{plan.MinY}-{plan.MaxY}";
+            var cachedComposite = await tileFetcher.TryGetCompositeMapAsync(compositeCacheKey, cancellationToken);
+            if (cachedComposite is { Length: > 0 })
+                return Ok(cachedComposite);
+
+            const int tileSize = 256;
+            using var stitched = new Image<Rgba32>(tileSize * plan.Width, tileSize * plan.Height);
+
+            for (var x = plan.MinX; x <= plan.MaxX; x++)
+            {
+                for (var y = plan.MinY; y <= plan.MaxY; y++)
                 {
-                    await DrawTileAsync(stitched, tileFetcher, layer, zoom, x, y, x * tileSize, y * tileSize, cancellationToken);
+                    var sourceX = NormalizeTileX(x, plan.Zoom);
+                    await DrawTileAsync(
+                        stitched,
+                        tileFetcher,
+                        layer,
+                        plan.Zoom,
+                        sourceX,
+                        y,
+                        (x - plan.MinX) * tileSize,
+                        (y - plan.MinY) * tileSize,
+                        cancellationToken);
                 }
             }
+
+            stitched.DrawAttribution("© OpenStreetMap contributors");
+
+            using var output = new MemoryStream();
+            await stitched.SaveAsPngAsync(output, cancellationToken);
+            var bytes = output.ToArray();
+            await tileFetcher.SaveCompositeMapAsync(compositeCacheKey, bytes, cancellationToken);
+            return Ok(bytes);
         }
-        else
+        catch (TileFetchException ex)
         {
-            // Render a grid around the centroid
-            int half = gridSize / 2;
-            for (int dx = -half; dx <= half; dx++)
-            {
-                for (int dy = -half; dy <= half; dy++)
-                {
-                    int tileX = centerX + dx;
-                    int tileY = centerY + dy;
+            logger.LogError(ex,
+                "Weather map tile request failed. Provider: {Provider}, Status: {StatusCode}, Url: {Url}, Body: {Body}",
+                ex.Provider,
+                ex.StatusCode,
+                ex.Url,
+                ex.ResponseBody);
 
-                    if (tileX < 0 || tileY < 0 || tileX >= (1 << zoom) || tileY >= (1 << zoom))
-                        continue;
+            var message = ex.Provider == "OpenStreetMap" && ex.StatusCode == System.Net.HttpStatusCode.Forbidden
+                ? "OpenStreetMap blocked the map tile request. Check the module logs for the tile usage policy response."
+                : $"{ex.Provider} could not return a map tile. Check the module logs for details.";
 
-                    int targetX = (dx + half) * tileSize;
-                    int targetY = (dy + half) * tileSize;
-
-                    await DrawTileAsync(stitched, tileFetcher, layer, zoom, tileX, tileY, targetX, targetY, cancellationToken);
-                }
-            }
-        }
-
-        stitched.DrawAttribution("© OpenStreetMap contributors");
-
-        using var output = new MemoryStream();
-        await stitched.SaveAsPngAsync(output, cancellationToken);
-        return Ok(output.ToArray());
+            return Fail<byte[]>(OpenWeatherOperationState.Unavailable, message);
         }
         catch (Exception ex) when (ex is not OperationCanceledException)
         {
@@ -390,15 +356,92 @@ public class OpenWeatherClient(
         });
     }
     
-    private int LonToTileX(double lon, int zoom)
+    private TilePlan? CreateWeatherMapPlan(
+        (OpenWeatherChatAugmentationsServiceInstance.MapTargetType Type, string Identifier) target)
+    {
+        return target.Type switch
+        {
+            OpenWeatherChatAugmentationsServiceInstance.MapTargetType.Global =>
+                new TilePlan(2, 0, 3, 0, 3),
+            OpenWeatherChatAugmentationsServiceInstance.MapTargetType.Continent
+                when CountryCentroids.TryGetBounds(target.Identifier, out var bounds) =>
+                    ChooseTilePlan(bounds, minZoom: 1, maxZoom: 5, maxTiles: 16, padding: 0),
+            OpenWeatherChatAugmentationsServiceInstance.MapTargetType.Country
+                when CountryCentroids.TryGetBounds(target.Identifier, out var bounds) =>
+                    ChooseTilePlan(bounds, minZoom: 3, maxZoom: 7, maxTiles: 24, padding: 0),
+            _ => null
+        };
+    }
+
+    private TilePlan ChooseTilePlan(GeoBounds bounds, int minZoom, int maxZoom, int maxTiles, int padding)
+    {
+        var normalized = bounds.ClampForWebMercator();
+
+        for (var zoom = maxZoom; zoom >= minZoom; zoom--)
+        {
+            var plan = TilePlan.FromBounds(normalized, zoom, padding);
+            if (plan.TileCount <= maxTiles)
+                return plan;
+        }
+
+        for (var zoom = maxZoom; zoom >= minZoom; zoom--)
+        {
+            var plan = TilePlan.FromBounds(normalized, zoom, padding: 0);
+            if (plan.TileCount <= maxTiles)
+                return plan;
+        }
+
+        return TilePlan.FromBounds(normalized, minZoom, padding: 0);
+    }
+
+    private static int LonToTileX(double lon, int zoom)
+    {
+        var maxTile = (1 << zoom) - 1;
+        return Math.Clamp((int)Math.Floor((lon + 180.0) / 360.0 * (1 << zoom)), 0, maxTile);
+    }
+
+    private static int LonToUnwrappedTileX(double lon, int zoom)
     {
         return (int)Math.Floor((lon + 180.0) / 360.0 * (1 << zoom));
     }
 
-    private int LatToTileY(double lat, int zoom)
+    private static int NormalizeTileX(int x, int zoom)
     {
+        var tileCount = 1 << zoom;
+        return ((x % tileCount) + tileCount) % tileCount;
+    }
+
+    private static int LatToTileY(double lat, int zoom)
+    {
+        lat = Math.Clamp(lat, -85.05112878, 85.05112878);
         var latRad = lat * Math.PI / 180.0;
-        return (int)Math.Floor((1.0 - Math.Log(Math.Tan(latRad) + 1.0 / Math.Cos(latRad)) / Math.PI) / 2.0 * (1 << zoom));
+        var maxTile = (1 << zoom) - 1;
+        return Math.Clamp((int)Math.Floor((1.0 - Math.Log(Math.Tan(latRad) + 1.0 / Math.Cos(latRad)) / Math.PI) / 2.0 * (1 << zoom)), 0, maxTile);
+    }
+
+    private readonly record struct TilePlan(int Zoom, int MinX, int MaxX, int MinY, int MaxY)
+    {
+        public int Width => MaxX - MinX + 1;
+        public int Height => MaxY - MinY + 1;
+        public int TileCount => Width * Height;
+
+        public static TilePlan FromBounds(GeoBounds bounds, int zoom, int padding)
+        {
+            var maxTile = (1 << zoom) - 1;
+            var minX = Math.Clamp(LonToUnwrappedTileX(bounds.MinLon, zoom), 0, maxTile);
+            var maxX = bounds.CrossesAntimeridian
+                ? LonToUnwrappedTileX(bounds.MaxLon + 360, zoom)
+                : Math.Clamp(LonToUnwrappedTileX(bounds.MaxLon, zoom), 0, maxTile);
+            var minY = LatToTileY(bounds.MaxLat, zoom);
+            var maxY = LatToTileY(bounds.MinLat, zoom);
+
+            return new TilePlan(
+                zoom,
+                Math.Max(0, Math.Min(minX, maxX) - padding),
+                Math.Min(maxTile * 2 + 1, Math.Max(minX, maxX) + padding),
+                Math.Clamp(Math.Min(minY, maxY) - padding, 0, maxTile),
+                Math.Clamp(Math.Max(minY, maxY) + padding, 0, maxTile));
+        }
     }
     
     public async Task<OpenWeatherResult<GeoResult>> ResolveLocationAsync(string location, CancellationToken cancellationToken)
