@@ -7,7 +7,7 @@ namespace Voxta.Modules.Aios.OpenWeather.Configuration;
 public class ModuleConfigurationProvider : ModuleConfigurationProviderBase, IModuleConfigurationProvider
 {
     public static string[] FieldsRequiringReload => [ApiKey.Name];
-    
+
     public static readonly FormPasswordField ApiKey = new()
     {
         Name = "ApiKey",
@@ -16,7 +16,7 @@ public class ModuleConfigurationProvider : ModuleConfigurationProviderBase, IMod
         //language=markdown
         Text = "Create an API key at [openweathermap.org](https://openweathermap.org/api).",
     };
-    
+
     public static readonly FormTextField MyLocation = new()
     {
         Name = "MyLocation",
@@ -24,7 +24,7 @@ public class ModuleConfigurationProvider : ModuleConfigurationProviderBase, IMod
         DefaultValue = "",
         Text = "A default location if you want the AI to know where you are. E.g. 'New York, United States' or 'Berlin, Germany'.",
     };
-    
+
     public static readonly FormChoicesField Units = new()
     {
         Name = "Units",
@@ -34,9 +34,9 @@ public class ModuleConfigurationProvider : ModuleConfigurationProviderBase, IMod
             new FormChoice { Value = "metric", Label = "Metric (Celsius, m/s)"},
             new FormChoice { Value = "imperial", Label = "Imperial (Fahrenheit, miles/hour)"},
         ],
-        DefaultValue = "imperial",
+        DefaultValue = "metric",
     };
-    
+
     public static readonly FormMultipleChoicesField WeatherDetails = new()
     {
         Name = "WeatherDetails",
@@ -64,7 +64,7 @@ public class ModuleConfigurationProvider : ModuleConfigurationProviderBase, IMod
         ],
         StartValue = ["Temp", "TempMinMax", "Precipitation"],
     };
-    
+
     public static readonly FormMultipleChoicesField PollutionDetails = new()
     {
         Name = "PollutionDetails",
@@ -96,7 +96,7 @@ public class ModuleConfigurationProvider : ModuleConfigurationProviderBase, IMod
         ],
         StartValue = ["AQI", "PM2.5", "PM10", "NO2", "O3"],
     };
-    
+
     public static readonly FormTextField TileCachePath = new()
     {
         Name = "TileCachePath",
@@ -106,30 +106,30 @@ public class ModuleConfigurationProvider : ModuleConfigurationProviderBase, IMod
         DefaultValue = @"%LOCALAPPDATA%\Voxta\Aios.OpenWeather",
         Advanced = true,
     };
-    
-   public Task<FormField[]> GetModuleConfigurationFieldsAsync(
-        IAuthenticationContext auth,
-        ISettingsSource settings,
-        CancellationToken cancellationToken
-    )
-   {
-       var fields = FormBuilder.Build(
-           FormDocumentationField.Create(
-               //language=markdown
-               """
+
+    public Task<FormField[]> GetModuleConfigurationFieldsAsync(
+         IAuthenticationContext auth,
+         ISettingsSource settings,
+         CancellationToken cancellationToken
+     )
+    {
+        var fields = FormBuilder.Build(
+            FormDocumentationField.Create(
+                //language=markdown
+                """
                For this provider to work we rely on a free external API service: [openweathermap.org](https://openweathermap.org/). They have a free plan which is rate limited to max 60 calls per minute.
 
                1. Open the URL and register
                2. Once you are registered and signed in, go to your profile and click on "My API keys"
                3. Give your key a custom name and hit Generate (It can take a while till the API key is activated, check your emails)
                """),
-           ApiKey,
-           MyLocation,
-           Units,
-           WeatherDetails,
-           PollutionDetails,
-           TileCachePath
-       );
+            ApiKey,
+            MyLocation,
+            Units,
+            WeatherDetails,
+            PollutionDetails,
+            TileCachePath
+        );
         return Task.FromResult(fields);
     }
 }

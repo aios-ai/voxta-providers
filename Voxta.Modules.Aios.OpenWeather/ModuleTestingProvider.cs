@@ -21,29 +21,30 @@ public class ModuleTestingProvider(
         CancellationToken cancellationToken
         )
     {
-        var apiKey = localEncryptionProvider.Decrypt(settings.GetRequired(ModuleConfigurationProvider.ApiKey));
-        var client = openWeatherClientFactory.CreateClient(apiKey);
         try
         {
+            var apiKey = localEncryptionProvider.Decrypt(settings.GetRequired(ModuleConfigurationProvider.ApiKey));
+            var client = openWeatherClientFactory.CreateClient(apiKey);
             var weatherData = await client.FetchWeatherData("New York, United States", "imperial", cancellationToken);
-            if (weatherData == null)
+            if (!weatherData.Success)
             {
                 return
                 [
                     new ModuleTestResultItem
                     {
                         Success = false,
-                        Message = "Failed to fetch weather data"
+                        Message = weatherData.UserVisibleError
                     }
                 ];
             }
             
+            var data = weatherData.Value!;
             return
             [
                 new ModuleTestResultItem
                 {
                     Success = true,
-                    Message = $"Successfully fetched weather data for New York, United States: {weatherData.Weather[0].Description}, {weatherData.Main.Temp}°F",
+                    Message = $"Successfully fetched weather data for New York, United States: {data.Weather[0].Description}, {data.Main.Temp}°F",
                 }
             ];
         }

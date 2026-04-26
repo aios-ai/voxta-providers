@@ -8,6 +8,29 @@ using SixLabors.ImageSharp.Processing;
 
 namespace Voxta.Modules.Aios.OpenWeather.Clients;
 
+public enum OpenWeatherOperationState
+{
+    Connected,
+    Disconnected,
+    AuthRequired,
+    ConfigurationRequired,
+    MissingResource,
+    ApiFailure,
+    Unavailable
+}
+
+public sealed record OpenWeatherResult<T>(
+    bool Success,
+    T? Value,
+    OpenWeatherOperationState State,
+    string UserVisibleError)
+{
+    public static OpenWeatherResult<T> Ok(T value) => new(true, value, OpenWeatherOperationState.Connected, string.Empty);
+
+    public static OpenWeatherResult<T> Fail(OpenWeatherOperationState state, string userVisibleError) =>
+        new(false, default, state, userVisibleError);
+}
+
 public interface IOpenWeatherClientFactory
 {
     IOpenWeatherClient CreateClient(string apiKey);
@@ -20,8 +43,6 @@ public class OpenWeatherClientFactory(
 {
     public IOpenWeatherClient CreateClient(string apiKey)
     {
-        if (string.IsNullOrWhiteSpace(apiKey))
-            throw new InvalidOperationException("API key is missing. Open the config file and set the variable.");
         var httpClient = httpClientFactory.CreateClient(VoxtaModule.ServiceName);
         return new OpenWeatherClient(httpClient, apiKey, loggerFactory.CreateLogger<OpenWeatherClient>());
     }
@@ -29,11 +50,13 @@ public class OpenWeatherClientFactory(
 
 public interface IOpenWeatherClient
 {
-    Task<OpenWeatherResponse?> FetchWeatherData(string location, string? units, CancellationToken cancellationToken);
-    Task<OpenWeatherForecastResponse?> FetchForecastData(string location, string? units, CancellationToken cancellationToken);
-    Task<OpenWeatherAirPollutionResponse?> FetchAirPollutionData(string location, CancellationToken cancellationToken);
-    Task<OpenWeatherAirPollutionResponse?> FetchAirPollutionForecastData(string location, CancellationToken cancellationToken);
-    Task<byte[]?> FetchWeatherMapAsync(
+    string LastUserVisibleError { get; }
+    OpenWeatherOperationState State { get; }
+    Task<OpenWeatherResult<OpenWeatherResponse>> FetchWeatherData(string location, string? units, CancellationToken cancellationToken);
+    Task<OpenWeatherResult<OpenWeatherForecastResponse>> FetchForecastData(string location, string? units, CancellationToken cancellationToken);
+    Task<OpenWeatherResult<OpenWeatherAirPollutionResponse>> FetchAirPollutionData(string location, CancellationToken cancellationToken);
+    Task<OpenWeatherResult<OpenWeatherAirPollutionResponse>> FetchAirPollutionForecastData(string location, CancellationToken cancellationToken);
+    Task<OpenWeatherResult<byte[]>> FetchWeatherMapAsync(
         (OpenWeatherChatAugmentationsServiceInstance.MapTargetType Type, string Identifier) target,
         string layer,
         string cacheDir,
@@ -46,25 +69,33 @@ public class OpenWeatherClient(
     ILogger<OpenWeatherClient> logger
 ) : IOpenWeatherClient
 {
-    public async Task<OpenWeatherResponse?> FetchWeatherData(
+    public string LastUserVisibleError { get; private set; } = string.Empty;
+    public OpenWeatherOperationState State { get; private set; } =
+        string.IsNullOrWhiteSpace(apiKey) ? OpenWeatherOperationState.ConfigurationRequired : OpenWeatherOperationState.Disconnected;
+
+    public async Task<OpenWeatherResult<OpenWeatherResponse>> FetchWeatherData(
         string location, string? units, CancellationToken cancellationToken)
     {
         try
         {
+            var ready = EnsureConfigured<OpenWeatherResponse>();
+            if (!ready.Success)
+                return ready;
+
             logger.LogInformation("Resolving location '{Location}'...", location);
             var geo = await ResolveLocationAsync(location, cancellationToken);
 
-            if (geo == null)
+            if (!geo.Success)
             {
                 logger.LogWarning("Could not resolve location '{Location}'", location);
-                return null;
+                return Fail<OpenWeatherResponse>(geo.State, geo.UserVisibleError);
             }
 
             logger.LogInformation("Fetching weather for {Name}, {Country} ({Lat}, {Lon})",
-                geo.Name, geo.Country, geo.Lat, geo.Lon);
+                geo.Value!.Name, geo.Value.Country, geo.Value.Lat, geo.Value.Lon);
 
             // https://openweathermap.org/current#geo
-            var weatherUrl = $"http://api.openweathermap.org/data/2.5/weather?lat={geo.Lat}&lon={geo.Lon}&appid={apiKey}&units={units}";
+            var weatherUrl = $"http://api.openweathermap.org/data/2.5/weather?lat={geo.Value.Lat}&lon={geo.Value.Lon}&appid={apiKey}&units={units}";
             var response = await httpClient.GetAsync(weatherUrl, cancellationToken);
 
             if (!response.IsSuccessStatusCode)
@@ -72,46 +103,50 @@ public class OpenWeatherClient(
                 var body = await response.Content.ReadAsStringAsync(cancellationToken);
                 logger.LogError("Failed to fetch weather data. Status Code: {StatusCode}, Body: {Body}",
                     response.StatusCode, body);
-                return null;
+                return Fail<OpenWeatherResponse>(MapHttpState(response.StatusCode), BuildApiError("weather data", response.StatusCode));
             }
 
             var content = await response.Content.ReadFromJsonAsync<OpenWeatherResponse>(cancellationToken);
             if (content == null)
             {
                 logger.LogError("Failed to parse weather data for {Location}", location);
-                return null;
+                return Fail<OpenWeatherResponse>(OpenWeatherOperationState.ApiFailure, "OpenWeather returned an unreadable weather response.");
             }
 
-            return content;
+            return Ok(content);
         }
-        catch (Exception ex)
+        catch (Exception ex) when (ex is not OperationCanceledException)
         {
             logger.LogError(ex, "Unexpected error fetching weather data for {Location}", location);
-            return null;
+            return Fail<OpenWeatherResponse>(OpenWeatherOperationState.Unavailable, "OpenWeather is currently unavailable. Try again later.");
         }
     }
     
-    public async Task<OpenWeatherForecastResponse?> FetchForecastData(
+    public async Task<OpenWeatherResult<OpenWeatherForecastResponse>> FetchForecastData(
         string location,
         string? units,
         CancellationToken cancellationToken)
     {
         try
         {
+            var ready = EnsureConfigured<OpenWeatherForecastResponse>();
+            if (!ready.Success)
+                return ready;
+
             logger.LogInformation("Resolving location '{Location}' for forecast...", location);
             var geo = await ResolveLocationAsync(location, cancellationToken);
 
-            if (geo == null)
+            if (!geo.Success)
             {
                 logger.LogWarning("Could not resolve location '{Location}' for forecast", location);
-                return null;
+                return Fail<OpenWeatherForecastResponse>(geo.State, geo.UserVisibleError);
             }
 
             logger.LogInformation("Fetching forecast for {Name}, {Country} ({Lat}, {Lon})",
-                geo.Name, geo.Country, geo.Lat, geo.Lon);
+                geo.Value!.Name, geo.Value.Country, geo.Value.Lat, geo.Value.Lon);
 
             // https://openweathermap.org/forecast5
-            var forecastUrl = $"http://api.openweathermap.org/data/2.5/forecast?lat={geo.Lat}&lon={geo.Lon}&appid={apiKey}&units={units}";
+            var forecastUrl = $"http://api.openweathermap.org/data/2.5/forecast?lat={geo.Value.Lat}&lon={geo.Value.Lon}&appid={apiKey}&units={units}";
             var response = await httpClient.GetAsync(forecastUrl, cancellationToken);
 
             if (!response.IsSuccessStatusCode)
@@ -119,40 +154,44 @@ public class OpenWeatherClient(
                 var body = await response.Content.ReadAsStringAsync(cancellationToken);
                 logger.LogError("Failed to fetch forecast data. Status Code: {StatusCode}, Body: {Body}",
                     response.StatusCode, body);
-                return null;
+                return Fail<OpenWeatherForecastResponse>(MapHttpState(response.StatusCode), BuildApiError("weather forecast", response.StatusCode));
             }
 
             var content = await response.Content.ReadFromJsonAsync<OpenWeatherForecastResponse>(cancellationToken);
             if (content == null)
             {
                 logger.LogError("Failed to parse forecast data for {Location}", location);
-                return null;
+                return Fail<OpenWeatherForecastResponse>(OpenWeatherOperationState.ApiFailure, "OpenWeather returned an unreadable forecast response.");
             }
 
-            return content;
+            return Ok(content);
         }
-        catch (Exception ex)
+        catch (Exception ex) when (ex is not OperationCanceledException)
         {
             logger.LogError(ex, "Unexpected error fetching forecast data for {Location}", location);
-            return null;
+            return Fail<OpenWeatherForecastResponse>(OpenWeatherOperationState.Unavailable, "OpenWeather is currently unavailable. Try again later.");
         }
     }
     
-    public async Task<OpenWeatherAirPollutionResponse?> FetchAirPollutionData(
+    public async Task<OpenWeatherResult<OpenWeatherAirPollutionResponse>> FetchAirPollutionData(
         string location,
         CancellationToken cancellationToken)
     {
         try
         {
+            var ready = EnsureConfigured<OpenWeatherAirPollutionResponse>();
+            if (!ready.Success)
+                return ready;
+
             var geo = await ResolveLocationAsync(location, cancellationToken);
-            if (geo == null)
+            if (!geo.Success)
             {
                 logger.LogWarning("Could not resolve location '{Location}' for air pollution data", location);
-                return null;
+                return Fail<OpenWeatherAirPollutionResponse>(geo.State, geo.UserVisibleError);
             }
 
             // https://openweathermap.org/api/air-pollution#current
-            var url = $"http://api.openweathermap.org/data/2.5/air_pollution?lat={geo.Lat}&lon={geo.Lon}&appid={apiKey}";
+            var url = $"http://api.openweathermap.org/data/2.5/air_pollution?lat={geo.Value!.Lat}&lon={geo.Value.Lon}&appid={apiKey}";
             var response = await httpClient.GetAsync(url, cancellationToken);
 
             if (!response.IsSuccessStatusCode)
@@ -160,40 +199,44 @@ public class OpenWeatherClient(
                 var body = await response.Content.ReadAsStringAsync(cancellationToken);
                 logger.LogError("Failed to fetch air pollution data. Status Code: {StatusCode}, Body: {Body}",
                     response.StatusCode, body);
-                return null;
+                return Fail<OpenWeatherAirPollutionResponse>(MapHttpState(response.StatusCode), BuildApiError("air pollution data", response.StatusCode));
             }
 
             var content = await response.Content.ReadFromJsonAsync<OpenWeatherAirPollutionResponse>(cancellationToken);
             if (content == null)
             {
                 logger.LogError("Failed to parse air pollution data for {Location}", location);
-                return null;
+                return Fail<OpenWeatherAirPollutionResponse>(OpenWeatherOperationState.ApiFailure, "OpenWeather returned an unreadable air pollution response.");
             }
 
-            return content;
+            return Ok(content);
         }
-        catch (Exception ex)
+        catch (Exception ex) when (ex is not OperationCanceledException)
         {
             logger.LogError(ex, "Unexpected error fetching air pollution data for {Location}", location);
-            return null;
+            return Fail<OpenWeatherAirPollutionResponse>(OpenWeatherOperationState.Unavailable, "OpenWeather is currently unavailable. Try again later.");
         }
     }
     
-    public async Task<OpenWeatherAirPollutionResponse?> FetchAirPollutionForecastData(
+    public async Task<OpenWeatherResult<OpenWeatherAirPollutionResponse>> FetchAirPollutionForecastData(
         string location,
         CancellationToken cancellationToken)
     {
         try
         {
+            var ready = EnsureConfigured<OpenWeatherAirPollutionResponse>();
+            if (!ready.Success)
+                return ready;
+
             var geo = await ResolveLocationAsync(location, cancellationToken);
-            if (geo == null)
+            if (!geo.Success)
             {
                 logger.LogWarning("Could not resolve location '{Location}' for air pollution forecast", location);
-                return null;
+                return Fail<OpenWeatherAirPollutionResponse>(geo.State, geo.UserVisibleError);
             }
 
             // https://openweathermap.org/api/air-pollution#forecast
-            var url = $"http://api.openweathermap.org/data/2.5/air_pollution/forecast?lat={geo.Lat}&lon={geo.Lon}&appid={apiKey}";
+            var url = $"http://api.openweathermap.org/data/2.5/air_pollution/forecast?lat={geo.Value!.Lat}&lon={geo.Value.Lon}&appid={apiKey}";
             var response = await httpClient.GetAsync(url, cancellationToken);
 
             if (!response.IsSuccessStatusCode)
@@ -201,31 +244,37 @@ public class OpenWeatherClient(
                 var body = await response.Content.ReadAsStringAsync(cancellationToken);
                 logger.LogError("Failed to fetch air pollution forecast data. Status Code: {StatusCode}, Body: {Body}",
                     response.StatusCode, body);
-                return null;
+                return Fail<OpenWeatherAirPollutionResponse>(MapHttpState(response.StatusCode), BuildApiError("air pollution forecast", response.StatusCode));
             }
 
             var content = await response.Content.ReadFromJsonAsync<OpenWeatherAirPollutionResponse>(cancellationToken);
             if (content == null)
             {
                 logger.LogError("Failed to parse air pollution forecast data for {Location}", location);
-                return null;
+                return Fail<OpenWeatherAirPollutionResponse>(OpenWeatherOperationState.ApiFailure, "OpenWeather returned an unreadable air pollution forecast response.");
             }
 
-            return content;
+            return Ok(content);
         }
-        catch (Exception ex)
+        catch (Exception ex) when (ex is not OperationCanceledException)
         {
             logger.LogError(ex, "Unexpected error fetching air pollution forecast data for {Location}", location);
-            return null;
+            return Fail<OpenWeatherAirPollutionResponse>(OpenWeatherOperationState.Unavailable, "OpenWeather is currently unavailable. Try again later.");
         }
     }
     
-    public async Task<byte[]?> FetchWeatherMapAsync(
+    public async Task<OpenWeatherResult<byte[]>> FetchWeatherMapAsync(
         (OpenWeatherChatAugmentationsServiceInstance.MapTargetType Type, string Identifier) target,
         string layer,
         string cacheDir,
         CancellationToken cancellationToken)
     {
+        var ready = EnsureConfigured<byte[]>();
+        if (!ready.Success)
+            return ready;
+
+        try
+        {
         var tileFetcher = new TileFetcher(httpClient, cacheDir);
         
         int zoom;
@@ -253,7 +302,7 @@ public class OpenWeatherClient(
                 else
                 {
                     logger.LogWarning("No centroid found for continent code {Code}", target.Identifier);
-                    return Array.Empty<byte>();
+                    return Fail<byte[]>(OpenWeatherOperationState.MissingResource, $"No map target was found for {target.Identifier}.");
                 }
                 break;
             case OpenWeatherChatAugmentationsServiceInstance.MapTargetType.Country:
@@ -268,13 +317,13 @@ public class OpenWeatherClient(
                 else
                 {
                     logger.LogWarning("No centroid found for country code {Code}", target.Identifier);
-                    return Array.Empty<byte>();
+                    return Fail<byte[]>(OpenWeatherOperationState.MissingResource, $"No map target was found for {target.Identifier}.");
                 }
                 break;
 
             default:
                 logger.LogWarning("Unsupported map target type");
-                return Array.Empty<byte>();
+                return Fail<byte[]>(OpenWeatherOperationState.MissingResource, "The requested weather map target is not supported.");
         }
 
         using var stitched = new Image<Rgba32>(tileSize * gridSize, tileSize * gridSize);
@@ -316,7 +365,13 @@ public class OpenWeatherClient(
 
         using var output = new MemoryStream();
         await stitched.SaveAsPngAsync(output, cancellationToken);
-        return output.ToArray();
+        return Ok(output.ToArray());
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            logger.LogError(ex, "Unexpected error generating weather map for {Target}", target.Identifier);
+            return Fail<byte[]>(OpenWeatherOperationState.Unavailable, "OpenWeather map data is currently unavailable. Try again later.");
+        }
     }
 
     private async Task DrawTileAsync(
@@ -351,11 +406,18 @@ public class OpenWeatherClient(
         return (int)Math.Floor((1.0 - Math.Log(Math.Tan(latRad) + 1.0 / Math.Cos(latRad)) / Math.PI) / 2.0 * (1 << zoom));
     }
     
-    public async Task<GeoResult?> ResolveLocationAsync(string location, CancellationToken cancellationToken)
+    public async Task<OpenWeatherResult<GeoResult>> ResolveLocationAsync(string location, CancellationToken cancellationToken)
     {
         try
         {
+            var ready = EnsureConfigured<GeoResult>();
+            if (!ready.Success)
+                return ready;
+
             var parts = location.Split(new[] { ',', ' ' }, StringSplitOptions.RemoveEmptyEntries);
+            if (parts.Length == 0)
+                return Fail<GeoResult>(OpenWeatherOperationState.ConfigurationRequired, "No location was provided.");
+
             string city = parts[0];
             string? countryCode = null;
 
@@ -379,16 +441,73 @@ public class OpenWeatherClient(
             if (geoResults == null || geoResults.Count == 0)
             {
                 logger.LogWarning("Could not resolve location '{Location}'", location);
-                return null;
+                return Fail<GeoResult>(OpenWeatherOperationState.MissingResource, $"OpenWeather could not find a location named {location}.");
             }
 
-            return geoResults[0];
+            return Ok(geoResults[0]);
         }
-        catch (Exception ex)
+        catch (HttpRequestException ex)
+        {
+            logger.LogError(ex, "OpenWeather geocoding request failed for '{Location}'", location);
+            return Fail<GeoResult>(OpenWeatherOperationState.Unavailable, "OpenWeather is currently unreachable. Try again later.");
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
         {
             logger.LogError(ex, "Unexpected error resolving location '{Location}'", location);
-            return null;
+            return Fail<GeoResult>(OpenWeatherOperationState.Unavailable, "OpenWeather is currently unavailable. Try again later.");
         }
     }
 
+    private OpenWeatherResult<T> EnsureConfigured<T>()
+    {
+        if (!string.IsNullOrWhiteSpace(apiKey))
+            return OpenWeatherResult<T>.Ok(default!);
+
+        return Fail<T>(
+            OpenWeatherOperationState.ConfigurationRequired,
+            "OpenWeather is not configured. Add an OpenWeather API key in the module settings, then reload the module.");
+    }
+
+    private OpenWeatherResult<T> Ok<T>(T value)
+    {
+        State = OpenWeatherOperationState.Connected;
+        LastUserVisibleError = string.Empty;
+        return OpenWeatherResult<T>.Ok(value);
+    }
+
+    private OpenWeatherResult<T> Fail<T>(OpenWeatherOperationState state, string userVisibleError)
+    {
+        State = state;
+        LastUserVisibleError = userVisibleError;
+        return OpenWeatherResult<T>.Fail(state, userVisibleError);
+    }
+
+    private static OpenWeatherOperationState MapHttpState(System.Net.HttpStatusCode statusCode)
+    {
+        return statusCode switch
+        {
+            System.Net.HttpStatusCode.Unauthorized or System.Net.HttpStatusCode.Forbidden => OpenWeatherOperationState.AuthRequired,
+            System.Net.HttpStatusCode.NotFound => OpenWeatherOperationState.MissingResource,
+            System.Net.HttpStatusCode.RequestTimeout or System.Net.HttpStatusCode.TooManyRequests => OpenWeatherOperationState.Unavailable,
+            >= System.Net.HttpStatusCode.InternalServerError => OpenWeatherOperationState.Unavailable,
+            _ => OpenWeatherOperationState.ApiFailure
+        };
+    }
+
+    private static string BuildApiError(string operation, System.Net.HttpStatusCode statusCode)
+    {
+        return statusCode switch
+        {
+            System.Net.HttpStatusCode.Unauthorized or System.Net.HttpStatusCode.Forbidden =>
+                "OpenWeather rejected the API key. Check the OpenWeather API key in the module settings, then reload the module.",
+            System.Net.HttpStatusCode.NotFound =>
+                $"OpenWeather could not find the requested {operation}.",
+            System.Net.HttpStatusCode.TooManyRequests =>
+                "OpenWeather rate-limited the request. Wait a bit and try again.",
+            >= System.Net.HttpStatusCode.InternalServerError =>
+                "OpenWeather is currently unavailable. Try again later.",
+            _ =>
+                $"OpenWeather could not return {operation}. HTTP status: {(int)statusCode} {statusCode}."
+        };
+    }
 }

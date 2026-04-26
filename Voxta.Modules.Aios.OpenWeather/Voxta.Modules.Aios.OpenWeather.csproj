@@ -5,6 +5,7 @@
         <ImplicitUsings>enable</ImplicitUsings>
         <Nullable>enable</Nullable>
         <CopyLocalLockFileAssemblies>true</CopyLocalLockFileAssemblies>
+        <CopyModuleDebugSymbols>false</CopyModuleDebugSymbols>
     </PropertyGroup>
     
     <ItemGroup>
@@ -26,14 +27,31 @@
     </ItemGroup>
 
     <Target Name="CopyToVoxtaModulesPath" AfterTargets="Build">
-        <Message Condition=" '$(VoxtaModulesPath)' == '' "
-                 Importance="high"
-                 Text="Warning: VoxtaModulesPath environment variable is not set. Output will not be copied." />
-        <Message Condition=" '$(VoxtaModulesPath)' != '' "
-                 Importance="high"
-                 Text="Copying output to VoxtaModulesPath: $(VoxtaModulesPath)" />
-    <Exec Condition=" '$(VoxtaModulesPath)' != '' "
-          Command="xcopy &quot;$(OutputPath)*&quot; &quot;$(VoxtaModulesPath)\&quot; /Y /Q /E" />
-  </Target>
+      <Message Condition=" '$(VoxtaModulesPath)' == '' "
+               Importance="high"
+               Text="Warning: VoxtaModulesPath environment variable is not set. Output will not be copied." />
+      <Message Condition=" '$(VoxtaModulesPath)' != '' "
+               Importance="high"
+               Text="Copying output to VoxtaModulesPath: $(VoxtaModulesPath)" />
+
+      <ItemGroup Condition=" '$(VoxtaModulesPath)' != '' ">
+        <VoxtaModuleRuntimeFiles Include="$(TargetDir)$(TargetFileName)" />
+        <VoxtaModuleRuntimeFiles Include="$(TargetDir)$(AssemblyName).deps.json"
+                                 Condition="Exists('$(TargetDir)$(AssemblyName).deps.json')" />
+        <VoxtaModuleRuntimeFiles Include="$(TargetDir)SixLabors.Fonts.dll"
+                                 Condition="Exists('$(TargetDir)SixLabors.Fonts.dll')" />
+        <VoxtaModuleRuntimeFiles Include="$(TargetDir)SixLabors.ImageSharp.dll"
+                                 Condition="Exists('$(TargetDir)SixLabors.ImageSharp.dll')" />
+        <VoxtaModuleRuntimeFiles Include="$(TargetDir)SixLabors.ImageSharp.Drawing.dll"
+                                 Condition="Exists('$(TargetDir)SixLabors.ImageSharp.Drawing.dll')" />
+        <VoxtaModuleRuntimeFiles Include="$(TargetDir)$(AssemblyName).pdb"
+                                 Condition=" '$(CopyModuleDebugSymbols)' == 'true' and Exists('$(TargetDir)$(AssemblyName).pdb')" />
+      </ItemGroup>
+
+      <Copy Condition=" '$(VoxtaModulesPath)' != '' "
+            SourceFiles="@(VoxtaModuleRuntimeFiles)"
+            DestinationFolder="$(VoxtaModulesPath)"
+            SkipUnchangedFiles="true" />
+    </Target>
     
 </Project>

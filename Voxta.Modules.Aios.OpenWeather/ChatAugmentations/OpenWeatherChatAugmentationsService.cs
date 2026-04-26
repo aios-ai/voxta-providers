@@ -35,17 +35,40 @@ public class OpenWeatherChatAugmentationsService(
         if (!session.IsAugmentationEnabled(VoxtaModule.AugmentationKey))
             return null;
         var logger = loggerFactory.CreateLogger<OpenWeatherChatAugmentationsServiceInstance>();
-        var apiKey = localEncryptionProvider.Decrypt(ModuleConfiguration.GetRequired(ModuleConfigurationProvider.ApiKey));
+        string apiKey;
+        try
+        {
+            apiKey = localEncryptionProvider.Decrypt(ModuleConfiguration.GetRequired(ModuleConfigurationProvider.ApiKey));
+        }
+        catch (Exception exc)
+        {
+            logger.LogError(exc, "OpenWeather API key configuration could not be loaded");
+            apiKey = string.Empty;
+        }
+
         var client = clientFactory.CreateClient(apiKey);
-        var rawSelectedWeather = ModuleConfiguration.GetRequired(ModuleConfigurationProvider.WeatherDetails);
-        var rawSelectedPollution = ModuleConfiguration.GetRequired(ModuleConfigurationProvider.PollutionDetails);
+        var rawSelectedWeather = GetSettingOrDefault(
+            () => ModuleConfiguration.GetRequired(ModuleConfigurationProvider.WeatherDetails),
+            Array.Empty<string>(),
+            "WeatherDetails",
+            logger);
+        var rawSelectedPollution = GetSettingOrDefault(
+            () => ModuleConfiguration.GetRequired(ModuleConfigurationProvider.PollutionDetails),
+            Array.Empty<string>(),
+            "PollutionDetails",
+            logger);
         var selectedWeather = ParseKeys(rawSelectedWeather, new[] { "Temp" });
         var selectedPollution = ParseKeys(rawSelectedPollution, new[] { "AQI" });
-        var tileCachePath = Path.GetFullPath(Environment.ExpandEnvironmentVariables(ModuleConfiguration.GetRequired(ModuleConfigurationProvider.TileCachePath)));
+        var rawTileCachePath = GetSettingOrDefault(
+            () => ModuleConfiguration.GetRequired(ModuleConfigurationProvider.TileCachePath),
+            Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "Voxta", "Aios.OpenWeather"),
+            "TileCachePath",
+            logger);
+        var tileCachePath = Path.GetFullPath(Environment.ExpandEnvironmentVariables(rawTileCachePath));
         var config = new OpenWeatherChatAugmentationsSettings
         {
-            MyLocation = ModuleConfiguration.GetRequired(ModuleConfigurationProvider.MyLocation),
-            Units = ModuleConfiguration.GetRequired(ModuleConfigurationProvider.Units),
+            MyLocation = GetSettingOrDefault(() => ModuleConfiguration.GetRequired(ModuleConfigurationProvider.MyLocation), string.Empty, "MyLocation", logger),
+            Units = GetSettingOrDefault(() => ModuleConfiguration.GetRequired(ModuleConfigurationProvider.Units), "metric", "Units", logger),
             WeatherDetails = selectedWeather.ToArray(),
             PollutionDetails = selectedPollution.ToArray(),
             TileCachePath = tileCachePath,
@@ -68,4 +91,20 @@ public class OpenWeatherChatAugmentationsService(
         return keys;
     }
 
+    private static T GetSettingOrDefault<T>(
+        Func<T> read,
+        T fallback,
+        string settingName,
+        ILogger logger)
+    {
+        try
+        {
+            return read();
+        }
+        catch (Exception exc)
+        {
+            logger.LogError(exc, "OpenWeather setting {SettingName} could not be loaded", settingName);
+            return fallback;
+        }
+    }
 }
