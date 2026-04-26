@@ -15,7 +15,8 @@ public class TileFetcher
         WriteIndented = true
     };
 
-    private static readonly TimeSpan MinimumOsmCacheDuration = TimeSpan.FromDays(7);
+    private static readonly TimeSpan MinimumOsmCacheDuration = TimeSpan.FromDays(180);
+    private static readonly TimeSpan LegacyDynamicCacheMaxAge = TimeSpan.FromDays(1);
     public static readonly TimeSpan WeatherCacheDuration = TimeSpan.FromMinutes(10);
 
     private readonly HttpClient _httpClient;
@@ -38,6 +39,8 @@ public class TileFetcher
         Directory.CreateDirectory(_osmCacheDir);
         Directory.CreateDirectory(_weatherCacheDir);
         Directory.CreateDirectory(_compositeCacheDir);
+
+        CleanupExpiredDynamicCaches();
     }
 
     public async Task<Image<Rgba32>> GetOsmTileAsync(int z, int x, int y, CancellationToken ct)
@@ -68,7 +71,10 @@ public class TileFetcher
         var metadata = await ReadMetadataAsync(GetMetadataPath(cachePath), ct);
 
         if (!File.Exists(cachePath) || !IsFresh(metadata))
+        {
+            TryDeleteCachePair(cachePath);
             return null;
+        }
 
         return await File.ReadAllBytesAsync(cachePath, ct);
     }
@@ -161,17 +167,47 @@ public class TileFetcher
         var cacheControl = response.Headers.CacheControl;
         var expires = response.Content.Headers.Expires;
 
-        var expiresUtc = cacheControl?.MaxAge is { } maxAge
+        var headerExpiresUtc = cacheControl?.MaxAge is { } maxAge
             ? now.Add(maxAge)
             : expires ?? now.Add(fallbackCacheDuration);
+        var minimumExpiresUtc = now.Add(fallbackCacheDuration);
+        var expiresUtc = headerExpiresUtc > minimumExpiresUtc
+            ? headerExpiresUtc
+            : minimumExpiresUtc;
 
         return new CacheMetadata
         {
             CreatedUtc = previous?.CreatedUtc ?? now,
-            ExpiresUtc = expiresUtc > now ? expiresUtc : now.Add(fallbackCacheDuration),
+            ExpiresUtc = expiresUtc,
             ETag = response.Headers.ETag?.ToString() ?? previous?.ETag,
             LastModifiedUtc = response.Content.Headers.LastModified ?? previous?.LastModifiedUtc
         };
+    }
+
+    private void CleanupExpiredDynamicCaches()
+    {
+        CleanupExpiredCacheDirectory(_weatherCacheDir);
+        CleanupExpiredCacheDirectory(_compositeCacheDir);
+    }
+
+    private static void CleanupExpiredCacheDirectory(string directory)
+    {
+        if (!Directory.Exists(directory))
+            return;
+
+        foreach (var cachePath in Directory.EnumerateFiles(directory, "*.png"))
+        {
+            var metadataPath = GetMetadataPath(cachePath);
+            var metadata = ReadMetadata(metadataPath);
+            var fileInfo = new FileInfo(cachePath);
+
+            var shouldDelete = metadata?.ExpiresUtc is { } expiresUtc
+                ? expiresUtc <= DateTimeOffset.UtcNow
+                : fileInfo.LastWriteTimeUtc <= DateTime.UtcNow.Subtract(LegacyDynamicCacheMaxAge);
+
+            if (shouldDelete)
+                TryDeleteCachePair(cachePath);
+        }
     }
 
     private static bool IsFresh(CacheMetadata? metadata)
@@ -188,6 +224,22 @@ public class TileFetcher
         {
             await using var stream = File.OpenRead(metadataPath);
             return await JsonSerializer.DeserializeAsync<CacheMetadata>(stream, JsonOptions, ct);
+        }
+        catch
+        {
+            return null;
+        }
+    }
+
+    private static CacheMetadata? ReadMetadata(string metadataPath)
+    {
+        if (!File.Exists(metadataPath))
+            return null;
+
+        try
+        {
+            using var stream = File.OpenRead(metadataPath);
+            return JsonSerializer.Deserialize<CacheMetadata>(stream, JsonOptions);
         }
         catch
         {
@@ -217,6 +269,25 @@ public class TileFetcher
     private static string GetMetadataPath(string cachePath)
     {
         return $"{cachePath}.json";
+    }
+
+    private static void TryDeleteCachePair(string cachePath)
+    {
+        TryDeleteFile(cachePath);
+        TryDeleteFile(GetMetadataPath(cachePath));
+    }
+
+    private static void TryDeleteFile(string path)
+    {
+        try
+        {
+            if (File.Exists(path))
+                File.Delete(path);
+        }
+        catch
+        {
+            // Cache cleanup is opportunistic; stale files can be retried later.
+        }
     }
 
     private static string SanitizeCacheKeyPart(string value)
