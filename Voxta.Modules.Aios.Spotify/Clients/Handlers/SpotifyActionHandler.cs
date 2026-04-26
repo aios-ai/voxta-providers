@@ -182,17 +182,7 @@ public class SpotifyActionHandler(
                 await SendSpotifyFailureOrDefault($"Failed to play your playlist: {playlistName}", cancellationToken);
             return;
         }
-        
-        /*var bestMatch = StringUtils.FindBestMatch(playlistName, settings.SpecialPlaylists.Keys);
-        if (bestMatch != null && settings.SpecialPlaylists.TryGetValue(bestMatch, out playlistId) &&
-            !string.IsNullOrWhiteSpace(playlistId))
-        {
-            var uri = $"spotify:playlist:{playlistId}";
-            await spotifyManager.PlaySpecificUri(uri, cancellationToken, "playlist");
-            await SendWithPrefix($"Playing your playlist: {bestMatch}", cancellationToken);
-            return;
-        }*/
-        
+                
         await SendWithPrefix($"No stored ID for '{playlistName}'. Please add it in the configuration.", cancellationToken);
     }
 
