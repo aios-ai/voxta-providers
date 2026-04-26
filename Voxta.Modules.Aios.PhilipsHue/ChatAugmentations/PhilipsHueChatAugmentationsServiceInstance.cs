@@ -615,7 +615,9 @@ public class PhilipsHueChatAugmentationsServiceInstance(
             .ToList();
         var scenes = hue.GetScenes()
             .Where(x => !string.IsNullOrWhiteSpace(x.Metadata?.Name))
-            .OrderBy(x => x.Metadata!.Name, StringComparer.CurrentCultureIgnoreCase)
+            .Select(x => x.Metadata!.Name!)
+            .Distinct(StringComparer.CurrentCultureIgnoreCase)
+            .OrderBy(x => x, StringComparer.CurrentCultureIgnoreCase)
             .ToList();
 
         var smartPlugs = lights
@@ -673,7 +675,7 @@ public class PhilipsHueChatAugmentationsServiceInstance(
         {
             AppendSectionHeader(builder, "Scenes");
             foreach (var scene in scenes)
-                builder.Append("- ").AppendLine(scene.Metadata!.Name);
+                builder.Append("- ").AppendLine(scene);
         }
 
         var duplicateNames = rooms.Select(x => x.Metadata!.Name)
