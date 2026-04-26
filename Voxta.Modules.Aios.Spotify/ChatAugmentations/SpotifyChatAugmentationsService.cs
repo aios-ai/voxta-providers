@@ -53,9 +53,7 @@ public class SpotifyChatAugmentationsService(
             SpecialPlaylists = playlistMap
         };
 
-        var tokenPath = Path.GetFullPath(Environment.ExpandEnvironmentVariables(ModuleConfiguration.GetRequired(ModuleConfigurationProvider.TokenPath)));
-        if (!tokenPath.EndsWith(".json")) throw new InvalidOperationException("TokenPath must end with .json");
-        tokenPath = tokenPath[..^5] + $".{Auth.UserId}.json";
+        var tokenPath = SpotifyAuthPath.GetUserTokenPath(ModuleConfiguration.GetRequired(ModuleConfigurationProvider.TokenPath), Auth.UserId);
         var spotifyManagerConfig = new SpotifyManagerConfig
         {
             ClientId = ModuleConfiguration.GetRequired(ModuleConfigurationProvider.ClientId),

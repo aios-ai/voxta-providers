@@ -31,7 +31,7 @@ public class ModuleTestingProvider(
             ClientId = settings.GetRequired(ModuleConfigurationProvider.ClientId),
             ClientSecret = localEncryptionProvider.Decrypt(settings.GetRequired(ModuleConfigurationProvider.ClientSecret)),
             RedirectUri = new Uri(settings.GetRequired(ModuleConfigurationProvider.RedirectUri)),
-            TokenPath = Path.GetFullPath(Environment.ExpandEnvironmentVariables(settings.GetRequired(ModuleConfigurationProvider.TokenPath))),
+            TokenPath = SpotifyAuthPath.GetUserTokenPath(settings.GetRequired(ModuleConfigurationProvider.TokenPath), auth.UserId),
         };
         // TODO: There is no way currently to get a tunnel here
         var ws = broadcastFactory.Create(auth.UserId);
