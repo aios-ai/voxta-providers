@@ -591,13 +591,14 @@ public class SpotifyActionHandler(
     
     private async Task SendWithPrefix(string message, CancellationToken cancellationToken)
     {
+        await session.SendSecretAsync(message, cancellationToken);
+
         if (!enableCharacterReplies)
         {
-            await session.SendNoteAsync(message, cancellationToken);
+            await session.TriggerReplyAsync(cancellationToken);
             return;
         }
 
-        await session.SendSecretAsync(message, cancellationToken);
         var reply = await GenerateShortCharacterReply(message, cancellationToken);
         await session.SendCharacterMessageAsync(reply, cancellationToken);
     }

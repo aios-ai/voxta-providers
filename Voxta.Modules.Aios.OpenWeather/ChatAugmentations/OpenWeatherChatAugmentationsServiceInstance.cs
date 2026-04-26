@@ -139,14 +139,14 @@ public class OpenWeatherChatAugmentationsServiceInstance(
 						[
 							new FunctionArgumentDefinition
 							{
-								Name = "get_map_layer",
+								Name = "layer",
 								Description = "The weather map layer requested by the user. Possible values: clouds, precipitation, pressure, wind, temp",
 								Required = true,
 								Type = FunctionArgumentType.String,
 							},
 							new FunctionArgumentDefinition
 							{
-								Name = "get_map_location",
+								Name = "location",
 								Description = "The continent or country for which to retrieve a weather map. If the user has not explicitly provided a location in their request, select global.",
 								Required = true,
 								Type = FunctionArgumentType.String,
@@ -436,8 +436,11 @@ public class OpenWeatherChatAugmentationsServiceInstance(
 			FileName = $"weathermap_{normalizedLayer}_{target.Identifier}.png"
 		};
 
+		var message =
+			$"OpenWeather fetched the weather map for {target.Identifier} ({WeatherMapHelper.ToDisplayName(normalizedLayer)}).";
+		await SendCharacterReplyAsync(message, cancellationToken);
 		await session.SendNoteAttachmentAsync(
-			$"{{{{ char }}}} fetched the weather map for {target.Identifier} ({WeatherMapHelper.ToDisplayName(normalizedLayer)}). ",
+			"Weather map",
 			image,
 			cancellationToken
 		);
@@ -491,8 +494,8 @@ public class OpenWeatherChatAugmentationsServiceInstance(
 
 	private ((MapTargetType Type, string Identifier) Target, string Layer) ResolveMapRequest(ServerActionMessage message)
 	{
-		var namedLayer = GetSafeArgument(message, "get_map_layer");
-		var namedLocation = GetSafeArgument(message, "get_map_location");
+		var namedLayer = GetSafeArgument(message, "layer");
+		var namedLocation = GetSafeArgument(message, "location");
 		string? selectedLayer = null;
 		string? selectedLocation = null;
 
