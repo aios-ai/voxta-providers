@@ -10,9 +10,7 @@ namespace Voxta.Modules.Aios.OpenWeather.Clients;
 
 public enum OpenWeatherOperationState
 {
-    Connected,
-    Disconnected,
-    AuthRequired,
+    Success,
     ConfigurationRequired,
     MissingResource,
     ApiFailure,
@@ -25,7 +23,7 @@ public sealed record OpenWeatherResult<T>(
     OpenWeatherOperationState State,
     string UserVisibleError)
 {
-    public static OpenWeatherResult<T> Ok(T value) => new(true, value, OpenWeatherOperationState.Connected, string.Empty);
+    public static OpenWeatherResult<T> Ok(T value) => new(true, value, OpenWeatherOperationState.Success, string.Empty);
 
     public static OpenWeatherResult<T> Fail(OpenWeatherOperationState state, string userVisibleError) =>
         new(false, default, state, userVisibleError);
@@ -51,7 +49,6 @@ public class OpenWeatherClientFactory(
 public interface IOpenWeatherClient
 {
     string LastUserVisibleError { get; }
-    OpenWeatherOperationState State { get; }
     Task<OpenWeatherResult<OpenWeatherResponse>> FetchWeatherData(string location, string? units, CancellationToken cancellationToken);
     Task<OpenWeatherResult<OpenWeatherForecastResponse>> FetchForecastData(string location, string? units, CancellationToken cancellationToken);
     Task<OpenWeatherResult<OpenWeatherAirPollutionResponse>> FetchAirPollutionData(string location, CancellationToken cancellationToken);
@@ -70,8 +67,6 @@ public class OpenWeatherClient(
 ) : IOpenWeatherClient
 {
     public string LastUserVisibleError { get; private set; } = string.Empty;
-    public OpenWeatherOperationState State { get; private set; } =
-        string.IsNullOrWhiteSpace(apiKey) ? OpenWeatherOperationState.ConfigurationRequired : OpenWeatherOperationState.Disconnected;
 
     public async Task<OpenWeatherResult<OpenWeatherResponse>> FetchWeatherData(
         string location, string? units, CancellationToken cancellationToken)
@@ -470,14 +465,12 @@ public class OpenWeatherClient(
 
     private OpenWeatherResult<T> Ok<T>(T value)
     {
-        State = OpenWeatherOperationState.Connected;
         LastUserVisibleError = string.Empty;
         return OpenWeatherResult<T>.Ok(value);
     }
 
     private OpenWeatherResult<T> Fail<T>(OpenWeatherOperationState state, string userVisibleError)
     {
-        State = state;
         LastUserVisibleError = userVisibleError;
         return OpenWeatherResult<T>.Fail(state, userVisibleError);
     }
@@ -486,7 +479,7 @@ public class OpenWeatherClient(
     {
         return statusCode switch
         {
-            System.Net.HttpStatusCode.Unauthorized or System.Net.HttpStatusCode.Forbidden => OpenWeatherOperationState.AuthRequired,
+            System.Net.HttpStatusCode.Unauthorized or System.Net.HttpStatusCode.Forbidden => OpenWeatherOperationState.ConfigurationRequired,
             System.Net.HttpStatusCode.NotFound => OpenWeatherOperationState.MissingResource,
             System.Net.HttpStatusCode.RequestTimeout or System.Net.HttpStatusCode.TooManyRequests => OpenWeatherOperationState.Unavailable,
             >= System.Net.HttpStatusCode.InternalServerError => OpenWeatherOperationState.Unavailable,
