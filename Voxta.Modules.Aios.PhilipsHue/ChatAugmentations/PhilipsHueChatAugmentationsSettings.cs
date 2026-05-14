@@ -6,4 +6,5 @@ public class PhilipsHueChatAugmentationsSettings
     public string? Username { get; init; }
     public string? CharacterControlledLight { get; init; }
     public string? AuthPath { get; init; }
+    public bool SendInventoryAtSessionStart { get; init; }
 }

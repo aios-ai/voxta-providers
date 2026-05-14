@@ -1,4 +1,5 @@
 using Microsoft.Extensions.Logging;
+using System.Collections.Concurrent;
 using Voxta.Abstractions.Chats.Sessions;
 using Voxta.Abstractions.Security;
 using Voxta.Abstractions.Services;
@@ -12,6 +13,8 @@ public class PhilipsHueChatAugmentationsService(
     ILoggerFactory loggerFactory
 ) : ServiceBase(loggerFactory.CreateLogger<PhilipsHueChatAugmentationsService>()), IChatAugmentationsService
 {
+    private static readonly ConcurrentDictionary<Guid, byte> InventoryNotesSentBySessionId = new();
+
     public async Task<IChatAugmentationServiceInstanceBase[]> CreateInstanceAsync(
         IChatSessionChatAugmentationApi session,
         IAuthenticationContext auth,
@@ -37,7 +40,8 @@ public class PhilipsHueChatAugmentationsService(
             Ip = ModuleConfiguration.GetRequired(ModuleConfigurationProvider.BridgeIp),
             Username = ModuleConfiguration.GetRequired(ModuleConfigurationProvider.BridgeUsername),
             CharacterControlledLight = ModuleConfiguration.GetOptional(ModuleConfigurationProvider.CharacterControlledLight),
-            AuthPath = authPath
+            AuthPath = authPath,
+            SendInventoryAtSessionStart = ModuleConfiguration.GetRequired(ModuleConfigurationProvider.SendInventoryAtSessionStart)
         };
         
         var hueUserInteractionWrapper = new HueUserInteractionWrapper(session);
@@ -59,7 +63,21 @@ public class PhilipsHueChatAugmentationsService(
         await manager.InitializeAsync(cancellationToken);
 
         var instance = new PhilipsHueChatAugmentationsServiceInstance(session, manager, config, logger);
-        await instance.SendHueInventoryNoteAsync(cancellationToken);
+        await TrySendHueInventoryNoteOncePerSessionAsync(session, instance, config, cancellationToken);
         return instance;
+    }
+
+    private static Task TrySendHueInventoryNoteOncePerSessionAsync(
+        IChatSessionChatAugmentationApi session,
+        PhilipsHueChatAugmentationsServiceInstance instance,
+        PhilipsHueChatAugmentationsSettings config,
+        CancellationToken cancellationToken)
+    {
+        if (!config.SendInventoryAtSessionStart)
+            return Task.CompletedTask;
+
+        return InventoryNotesSentBySessionId.TryAdd(session.SessionId, 0)
+            ? instance.SendHueInventoryNoteAsync(cancellationToken)
+            : Task.CompletedTask;
     }
 }

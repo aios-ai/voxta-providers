@@ -120,6 +120,7 @@ AfterAssistantMessage actions:
 - `show_emotion`: If `CharacterControlledLight` is configured, the character can change that light based on emotion or whatever fits the current situation best.
 
 Configuration stores Hue authentication data locally and can target a character-controlled light, room, zone, or group.
+You can also disable the automatic startup inventory note; when enabled, it is sent at most once per session id.
 
 ## Requirements
 

@@ -38,6 +38,14 @@ public class ModuleConfigurationProvider : ModuleConfigurationProviderBase, IMod
         DefaultValue = "",
         Text = "Target light, zone or room name the character can control on it's own (optional)",
     };
+
+    public static readonly FormBooleanField SendInventoryAtSessionStart = new()
+    {
+        Name = "SendInventoryAtSessionStart",
+        Label = "Send Inventory At Session Start",
+        Text = "Send the available Hue inventory to chat notes when a session starts. This is sent at most once per session id.",
+        DefaultValue = true
+    };
     
     public static readonly FormTextField AuthPath = new()
     {
@@ -58,6 +66,7 @@ public class ModuleConfigurationProvider : ModuleConfigurationProviderBase, IMod
    {
        var fields = FormBuilder.Build(
            CharacterControlledLight,
+           SendInventoryAtSessionStart,
            AuthPath
        );
         return Task.FromResult(fields);
