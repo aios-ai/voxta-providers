@@ -12,13 +12,13 @@ public class VoxtaModule : IVoxtaModule
 {
     public const string ServiceName = "Aios.OpenWeather";
     public const string AugmentationKey = "openweather";
-    
+
     public void Configure(IVoxtaModuleBuilder builder)
     {
         builder.Register(new()
         {
             ServiceName = ServiceName,
-            Label = "Open Weather",
+            Label = "Open Weather (by aios)",
             Experimental = true,
             CanBeInstalledByAdminsOnly = false,
             Supports = new()
@@ -37,9 +37,9 @@ public class VoxtaModule : IVoxtaModule
             ModuleConfigurationFieldsRequiringReload = ModuleConfigurationProvider.FieldsRequiringReload,
             ModuleTestingProviderType = typeof(ModuleTestingProvider),
         });
-        
+
         builder.AddChatAugmentationsService<OpenWeatherChatAugmentationsService>(ServiceName);
-        
+
         builder.Services.AddSingleton<IOpenWeatherClientFactory, OpenWeatherClientFactory>();
     }
 }

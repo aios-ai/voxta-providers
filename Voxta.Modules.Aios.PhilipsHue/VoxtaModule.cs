@@ -16,7 +16,7 @@ public class VoxtaModule : IVoxtaModule
         builder.Register(new()
         {
             ServiceName = ServiceName,
-            Label = "Philips Hue",
+            Label = "Philips Hue (by aios)",
             Experimental = true,
             CanBeInstalledByAdminsOnly = false,
             Supports = new()

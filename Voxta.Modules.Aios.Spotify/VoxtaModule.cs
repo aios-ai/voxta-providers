@@ -20,7 +20,7 @@ public class VoxtaModule : IVoxtaModule
         builder.Register(new()
         {
             ServiceName = ServiceName,
-            Label = "Spotify",
+            Label = "Spotify (by aios)",
             Experimental = true,
             CanBeInstalledByAdminsOnly = false,
             Supports = new()
