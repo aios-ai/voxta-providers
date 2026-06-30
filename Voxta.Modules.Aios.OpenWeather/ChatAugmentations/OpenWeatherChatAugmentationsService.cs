@@ -65,8 +65,14 @@ public class OpenWeatherChatAugmentationsService(
             "TileCachePath",
             logger);
         var tileCachePath = Path.GetFullPath(Environment.ExpandEnvironmentVariables(rawTileCachePath));
+        var actions = GetSettingOrDefault(
+            () => ModuleConfiguration.GetOptional<OpenWeatherActionSettings>(ModuleConfigurationProvider.Actions),
+            ModuleConfigurationProvider.DefaultActions,
+            "Actions",
+            logger);
         var config = new OpenWeatherChatAugmentationsSettings
         {
+            Actions = NormalizeActions(actions),
             MyLocation = GetSettingOrDefault(() => ModuleConfiguration.GetRequired(ModuleConfigurationProvider.MyLocation), string.Empty, "MyLocation", logger),
             Units = GetSettingOrDefault(() => ModuleConfiguration.GetRequired(ModuleConfigurationProvider.Units), "metric", "Units", logger),
             WeatherDetails = selectedWeather.ToArray(),
@@ -75,6 +81,47 @@ public class OpenWeatherChatAugmentationsService(
         };
         logger.LogInformation("Chat session {SessionId} has been augmented with {Augmentation}", session.SessionId, VoxtaModule.AugmentationKey);
         return new OpenWeatherChatAugmentationsServiceInstance(session, client, config, logger);
+    }
+
+    private static OpenWeatherActionSettings[] NormalizeActions(OpenWeatherActionSettings[]? actions)
+    {
+        if (actions is not { Length: > 0 })
+            return ModuleConfigurationProvider.DefaultActions;
+
+        var defaultsByName = ModuleConfigurationProvider.DefaultActions.ToDictionary(x => x.Name, StringComparer.OrdinalIgnoreCase);
+        return actions
+            .Where(action => !string.IsNullOrWhiteSpace(action.Name) && defaultsByName.ContainsKey(action.Name))
+            .Select(action =>
+            {
+                var defaultAction = defaultsByName[action.Name];
+                return new OpenWeatherActionSettings
+                {
+                    Name = defaultAction.Name,
+                    Layer = defaultAction.Layer,
+                    ShortDescription = string.IsNullOrWhiteSpace(action.ShortDescription) ? defaultAction.ShortDescription : action.ShortDescription,
+                    Description = string.IsNullOrWhiteSpace(action.Description) ? defaultAction.Description : action.Description,
+                    MatchFilter = NormalizeMatchFilter(action.MatchFilter, defaultAction.MatchFilter),
+                    Disabled = action.Disabled,
+                    CancelReply = action.CancelReply,
+                };
+            })
+            .ToArray();
+    }
+
+    private static string? NormalizeMatchFilter(string? matchFilter, string? fallback)
+    {
+        var values = (matchFilter ?? "")
+            .Split(["\r\n", "\n"], StringSplitOptions.RemoveEmptyEntries)
+            .Select(value => value.Trim())
+            .Where(value => !string.IsNullOrWhiteSpace(value))
+            .ToArray();
+
+        return values.Length == 0 ? fallback : string.Join(Environment.NewLine, values);
+    }
+
+    public static bool ParseActionBoolean(string? value, bool fallback)
+    {
+        return bool.TryParse(value, out var parsed) ? parsed : fallback;
     }
     
     private static HashSet<string> ParseKeys(string[]? raw, IEnumerable<string> defaults)
