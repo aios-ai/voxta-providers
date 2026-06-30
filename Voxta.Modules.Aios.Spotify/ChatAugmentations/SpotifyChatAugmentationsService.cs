@@ -47,9 +47,9 @@ public class SpotifyChatAugmentationsService(
         
         var config = new SpotifyChatAugmentationsSettings
         {
+            Actions = NormalizeActions(ModuleConfiguration.GetOptional<SpotifyActionSettings>(ModuleConfigurationProvider.Actions)),
             MatchFilterWakeWord = ModuleConfiguration.GetOptional(ModuleConfigurationProvider.MatchFilterWakeWord),
             SpeechDuckingVolumePercent = ModuleConfiguration.GetRequired(ModuleConfigurationProvider.SpeechDuckingVolumePercent),
-            EnableCharacterReplies = ModuleConfiguration.GetRequired(ModuleConfigurationProvider.EnableCharacterReplies),
             SpecialPlaylists = playlistMap
         };
 
@@ -69,7 +69,7 @@ public class SpotifyChatAugmentationsService(
 
         var spotifyPlaybackMonitor = new SpotifyPlaybackMonitor(spotifyManager, session, loggerFactory.CreateLogger<SpotifyPlaybackMonitor>());
         
-        var spotifyActionHandler = new SpotifyActionHandler(spotifyManager, spotifySearchService, session, config, loggerFactory.CreateLogger<SpotifyActionHandler>(), () => spotifyPlaybackMonitor.PlaybackState, spotifyPlaybackMonitor.SetLastActionAsync, config.EnableCharacterReplies);
+        var spotifyActionHandler = new SpotifyActionHandler(spotifyManager, spotifySearchService, session, config, loggerFactory.CreateLogger<SpotifyActionHandler>(), () => spotifyPlaybackMonitor.PlaybackState, spotifyPlaybackMonitor.SetLastActionAsync);
         
         var instance = new SpotifyChatAugmentationsServiceInstance(
             session,
@@ -87,5 +87,47 @@ public class SpotifyChatAugmentationsService(
             throw;
         }
         return instance;
+    }
+
+    private static SpotifyActionSettings[] NormalizeActions(SpotifyActionSettings[]? actions)
+    {
+        if (actions is not { Length: > 0 })
+            return ModuleConfigurationProvider.DefaultActions;
+
+        var defaultsByName = ModuleConfigurationProvider.DefaultActions.ToDictionary(x => x.Name, StringComparer.OrdinalIgnoreCase);
+        return actions
+            .Where(action => !string.IsNullOrWhiteSpace(action.Name) && defaultsByName.ContainsKey(action.Name))
+            .Select(action =>
+            {
+                var defaultAction = defaultsByName[action.Name];
+                return new SpotifyActionSettings
+                {
+                    Name = defaultAction.Name,
+                    Layer = defaultAction.Layer,
+                    ShortDescription = string.IsNullOrWhiteSpace(action.ShortDescription) ? defaultAction.ShortDescription : action.ShortDescription,
+                    Description = string.IsNullOrWhiteSpace(action.Description) ? defaultAction.Description : action.Description,
+                    MatchFilter = NormalizeMultilineSetting(action.MatchFilter, defaultAction.MatchFilter),
+                    FlagsFilter = string.IsNullOrWhiteSpace(action.FlagsFilter) ? defaultAction.FlagsFilter : action.FlagsFilter,
+                    Disabled = action.Disabled,
+                    CancelReply = action.CancelReply,
+                };
+            })
+            .ToArray();
+    }
+
+    private static string? NormalizeMultilineSetting(string? value, string? fallback)
+    {
+        var values = (value ?? "")
+            .Split(["\r\n", "\n"], StringSplitOptions.RemoveEmptyEntries)
+            .Select(x => x.Trim())
+            .Where(x => !string.IsNullOrWhiteSpace(x))
+            .ToArray();
+
+        return values.Length == 0 ? fallback : string.Join(Environment.NewLine, values);
+    }
+
+    public static bool ParseActionBoolean(string? value, bool fallback)
+    {
+        return bool.TryParse(value, out var parsed) ? parsed : fallback;
     }
 }
