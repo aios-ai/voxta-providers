@@ -105,7 +105,7 @@ public class SpotifyActionHandler(
                     break;
                 default:
                     logger.LogWarning("Unsupported Spotify action '{Action}' received.", message.Value);
-                    await SendWithPrefix($"That Spotify action is not supported.", cancellationToken);
+                    await SendSpotifyFailure("That Spotify request is not supported.", cancellationToken);
                     break;
             }
         }
@@ -116,7 +116,7 @@ public class SpotifyActionHandler(
         catch (Exception ex)
         {
             logger.LogError(ex, "Spotify action '{Action}' failed unexpectedly.", message.Value);
-            await SendSpotifyFailureOrDefault("Spotify could not complete that request. Please check Spotify and try again.", cancellationToken);
+            await SendSpotifyFailureOrDefault("Spotify could not complete the request. The user should check Spotify and try again.", cancellationToken);
         }
     }
 
@@ -166,7 +166,7 @@ public class SpotifyActionHandler(
         }
         else
         {
-            await SendWithPrefix($"No top tracks found to play randomly.", cancellationToken);
+            await SendSpotifyFailure("Spotify could not pick random music because no top tracks were found.", cancellationToken);
         }
     }
     
@@ -174,7 +174,7 @@ public class SpotifyActionHandler(
     {
         if (!message.TryGetArgument("name", out var playlistName) || string.IsNullOrWhiteSpace(playlistName))
         {
-            await SendWithPrefix("Special playlist name not provided.", cancellationToken);
+            await SendSpotifyFailure("Spotify could not play a special playlist because no playlist name was provided.", cancellationToken);
             return;
         }
 
@@ -193,7 +193,7 @@ public class SpotifyActionHandler(
             return;
         }
                 
-        await SendWithPrefix($"No stored ID for '{playlistName}'. Please add it in the configuration.", cancellationToken);
+        await SendSpotifyFailure($"Spotify could not play '{playlistName}' because that special playlist is not configured.", cancellationToken);
     }
 
     private async Task HandlePlayMusic(ServerActionMessage message, CancellationToken cancellationToken)
@@ -203,7 +203,7 @@ public class SpotifyActionHandler(
 
         if (playNameString == "noop")
         {
-            await SendWithPrefix("Request not identified.", cancellationToken);
+            await SendSpotifyFailure("Spotify could not play music because the requested music was not identified.", cancellationToken);
             return;
         }
 
@@ -237,7 +237,7 @@ public class SpotifyActionHandler(
         }
         else
         {
-            await SendWithPrefix("No matching results found to play.", cancellationToken);
+            await SendSpotifyFailure("Spotify could not find matching music to play.", cancellationToken);
         }
     }
     private async Task HandleQueueTrack(ServerActionMessage message, CancellationToken cancellationToken)
@@ -247,7 +247,7 @@ public class SpotifyActionHandler(
 
         if (queueTypeString == "noop")
         {
-            await SendWithPrefix($"Request not identified.", cancellationToken);
+            await SendSpotifyFailure("Spotify could not queue a track because the requested track was not identified.", cancellationToken);
             return;
         }
 
@@ -265,11 +265,11 @@ public class SpotifyActionHandler(
         }
         else if (type != null && type != "track")
         {
-            await SendWithPrefix($"Cannot queue {type}s. Try playing it instead.", cancellationToken);
+            await SendSpotifyFailure($"Spotify could not queue that request because '{type}' items cannot be queued as tracks.", cancellationToken);
         }
         else
         {
-            await SendWithPrefix($"No matching results found to queue.", cancellationToken);
+            await SendSpotifyFailure("Spotify could not find a matching track to queue.", cancellationToken);
         }
     }
     
@@ -293,14 +293,14 @@ public class SpotifyActionHandler(
     {
         if (!message.TryGetArgument("type", out var typeString))
         {
-            await SendWithPrefix($"Volume change type not specified.", cancellationToken);
+            await SendSpotifyFailure("Spotify could not change the volume because the requested volume change was not clear.", cancellationToken);
             return;
         }
 
         var playbackState = getPlaybackState();
         if (playbackState?.Device == null)
         {
-            await SendWithPrefix($"No active Spotify device found to change volume.", cancellationToken);
+            await SendSpotifyFailure("Spotify could not change the volume because no active Spotify device was found.", cancellationToken);
             return;
         }
 
@@ -325,7 +325,7 @@ public class SpotifyActionHandler(
                 newVolume = Math.Clamp(currentVolume - step, 0, 100);
                 break;
             default:
-                await SendWithPrefix($"Invalid volume change type. Please use 'set', 'increase', or 'decrease'.", cancellationToken);
+                await SendSpotifyFailure("Spotify could not change the volume because the volume change must be set, increase, or decrease.", cancellationToken);
                 return;
         }
 
@@ -343,14 +343,14 @@ public class SpotifyActionHandler(
     {
         if (!message.TryGetArgument("target", out var targetString))
         {
-            await SendWithPrefix($"Seek target not specified.", cancellationToken);
+            await SendSpotifyFailure("Spotify could not seek playback because the seek target was not specified.", cancellationToken);
             return;
         }
 
         var playbackState = getPlaybackState();
         if (playbackState == null || playbackState.Item is not FullTrack currentTrack)
         {
-            await SendWithPrefix($"No track is currently playing to seek within.", cancellationToken);
+            await SendSpotifyFailure("Spotify could not seek playback because no track is currently playing.", cancellationToken);
             return;
         }
 
@@ -389,7 +389,7 @@ public class SpotifyActionHandler(
                 }
                 else
                 {
-                    await SendWithPrefix($"Please specify a time in seconds to seek to.", cancellationToken);
+                    await SendSpotifyFailure("Spotify could not seek playback because no time in seconds was specified.", cancellationToken);
                     return;
                 }
                 break;
@@ -400,7 +400,7 @@ public class SpotifyActionHandler(
                 }
                 else
                 {
-                    await SendWithPrefix($"Please specify a percentage to seek to.", cancellationToken);
+                    await SendSpotifyFailure("Spotify could not seek playback because no percentage was specified.", cancellationToken);
                     return;
                 }
                 break;
@@ -408,7 +408,7 @@ public class SpotifyActionHandler(
                 newPositionMs = trackDurationMs / 2;
                 break;
             default:
-                await SendWithPrefix($"Invalid seek target. Please use 'forward', 'backward', 'to_time', 'to_percent', or 'middle'.", cancellationToken);
+                await SendSpotifyFailure("Spotify could not seek playback because the target must be forward, backward, to_time, to_percent, or middle.", cancellationToken);
                 return;
         }
 
@@ -456,7 +456,7 @@ public class SpotifyActionHandler(
         var (trackUri, trackFriendlyName) = GetCurrentTrackInfo();
         if (string.IsNullOrEmpty(trackUri))
         {
-            await SendWithPrefix("No track is currently playing.", cancellationToken);
+            await SendSpotifyFailure("Spotify could not save the current track because no track is currently playing.", cancellationToken);
             return;
         }
 
@@ -495,7 +495,7 @@ public class SpotifyActionHandler(
     {
         if (!message.TryGetArgument("playlist", out var playlistFriendlyName) || string.IsNullOrEmpty(playlistFriendlyName))
         {
-            await SendWithPrefix($"No playlist specified.", cancellationToken);
+            await SendSpotifyFailure("Spotify could not add the track to a playlist because no playlist was specified.", cancellationToken);
             return;
         }
 
@@ -508,7 +508,7 @@ public class SpotifyActionHandler(
 
         if (matchedPlaylist.Key == null)
         {
-            await SendWithPrefix($"Playlist not found: {playlistFriendlyName}", cancellationToken);
+            await SendSpotifyFailure($"Spotify could not add the track to '{playlistFriendlyName}' because that playlist was not found.", cancellationToken);
             return;
         }
 
@@ -517,7 +517,7 @@ public class SpotifyActionHandler(
         var (trackUri, trackFriendlyName) = GetCurrentTrackInfo();
         if (string.IsNullOrEmpty(trackUri))
         {
-            await SendWithPrefix($"No track is currently playing.", cancellationToken);
+            await SendSpotifyFailure("Spotify could not add a track to the playlist because no track is currently playing.", cancellationToken);
             return;
         }
 
@@ -549,7 +549,7 @@ public class SpotifyActionHandler(
     {
         if (!message.TryGetArgument("device", out var partialName) || string.IsNullOrEmpty(partialName))
         {
-            await SendWithPrefix($"No device specified.", cancellationToken);
+            await SendSpotifyFailure("Spotify could not transfer playback because no device was specified.", cancellationToken);
             return;
         }
 
@@ -572,7 +572,7 @@ public class SpotifyActionHandler(
             }
             else
             {
-                await SendWithPrefix($"No device found matching: {partialName}", cancellationToken);
+                await SendSpotifyFailure($"Spotify could not transfer playback because no device matched '{partialName}'.", cancellationToken);
             }
             return;
         }
@@ -598,7 +598,13 @@ public class SpotifyActionHandler(
     
     private Task SendSpotifyFailureOrDefault(string fallbackMessage, CancellationToken cancellationToken)
     {
-        return SendWithPrefix(spotifyManager.LastUserVisibleError ?? fallbackMessage, cancellationToken);
+        return SendSpotifyFailure(spotifyManager.LastUserVisibleError ?? fallbackMessage, cancellationToken);
+    }
+
+    private async Task SendSpotifyFailure(string message, CancellationToken cancellationToken)
+    {
+        await session.SendSecretAsync(message, cancellationToken);
+        await session.TriggerReplyAsync(cancellationToken);
     }
     
     private async Task SendWithPrefix(string message, CancellationToken cancellationToken)

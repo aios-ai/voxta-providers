@@ -212,7 +212,7 @@ public class OpenWeatherChatAugmentationsServiceInstance(
 		catch (Exception exc) when (exc is not OperationCanceledException)
 		{
 			logger.LogError(exc, "Unexpected OpenWeather action failure for {Action}", serverActionMessage.Value);
-			await SendActionFeedbackAsync("OpenWeather hit an unexpected error while handling that request. Please try again.", cancelReply, cancellationToken);
+			await SendFailureAsync("The weather request could not be completed. The user should check the OpenWeather settings or try again.", cancellationToken);
 			return true;
 		}
 	}
@@ -237,7 +237,7 @@ public class OpenWeatherChatAugmentationsServiceInstance(
 			if (!weatherData.Success)
 			{
 				logger.LogWarning("No weather data returned for {Location}", location);
-				await SendFailureAsync(weatherData.UserVisibleError, cancelReply, cancellationToken);
+				await SendFailureAsync(weatherData.UserVisibleError, cancellationToken);
 				return;
 			}
 
@@ -281,7 +281,7 @@ public class OpenWeatherChatAugmentationsServiceInstance(
 		catch (Exception exc)
 		{
 			logger.LogError(exc, "Failed to fetch weather data");
-			await SendActionFeedbackAsync("OpenWeather hit an unexpected error while fetching weather data. Please try again.", cancelReply, cancellationToken);
+			await SendFailureAsync("The current weather could not be retrieved. The user should check the OpenWeather settings or try again.", cancellationToken);
 		}
 	}
 
@@ -296,7 +296,7 @@ public class OpenWeatherChatAugmentationsServiceInstance(
 			if (!forecast.Success)
 			{
 				logger.LogWarning("No weather forecast data returned for {Location}", location);
-				await SendFailureAsync(forecast.UserVisibleError, cancelReply, cancellationToken);
+				await SendFailureAsync(forecast.UserVisibleError, cancellationToken);
 				return;
 			}
 
@@ -312,7 +312,7 @@ public class OpenWeatherChatAugmentationsServiceInstance(
 		catch (Exception exc)
 		{
 			logger.LogError(exc, "Failed to fetch weather forecast data");
-			await SendActionFeedbackAsync("OpenWeather hit an unexpected error while fetching forecast data. Please try again.", cancelReply, cancellationToken);
+			await SendFailureAsync("The weather forecast could not be retrieved. The user should check the OpenWeather settings or try again.", cancellationToken);
 		}
 	}
 
@@ -328,7 +328,7 @@ public class OpenWeatherChatAugmentationsServiceInstance(
 			if (!pollutionData.Success)
 			{
 				logger.LogWarning("No pollution data returned for {Location}", location);
-				await SendFailureAsync(pollutionData.UserVisibleError, cancelReply, cancellationToken);
+				await SendFailureAsync(pollutionData.UserVisibleError, cancellationToken);
 				return;
 			}
 
@@ -368,7 +368,7 @@ public class OpenWeatherChatAugmentationsServiceInstance(
 		catch (Exception exc)
 		{
 			logger.LogError(exc, "Failed to fetch air pollution data");
-			await SendActionFeedbackAsync("OpenWeather hit an unexpected error while fetching air pollution data. Please try again.", cancelReply, cancellationToken);
+			await SendFailureAsync("The current air pollution data could not be retrieved. The user should check the OpenWeather settings or try again.", cancellationToken);
 		}
 	}
 
@@ -383,7 +383,7 @@ public class OpenWeatherChatAugmentationsServiceInstance(
 			if (!forecastData.Success)
 			{
 				logger.LogWarning("No forecast pollution data returned for {Location}", location);
-				await SendFailureAsync(forecastData.UserVisibleError, cancelReply, cancellationToken);
+				await SendFailureAsync(forecastData.UserVisibleError, cancellationToken);
 				return;
 			}
 
@@ -396,7 +396,7 @@ public class OpenWeatherChatAugmentationsServiceInstance(
 		catch (Exception exc)
 		{
 			logger.LogError(exc, "Failed to fetch air pollution forecast data");
-			await SendActionFeedbackAsync("OpenWeather hit an unexpected error while fetching air pollution forecast data. Please try again.", cancelReply, cancellationToken);
+			await SendFailureAsync("The air pollution forecast could not be retrieved. The user should check the OpenWeather settings or try again.", cancellationToken);
 		}
 	}
 
@@ -414,14 +414,14 @@ public class OpenWeatherChatAugmentationsServiceInstance(
 		catch (Exception exc) when (exc is not OperationCanceledException)
 		{
 			logger.LogError(exc, "Failed to generate weather map");
-			await SendActionFeedbackAsync("OpenWeather hit an unexpected error while generating the weather map. Please try again.", cancelReply, cancellationToken);
+			await SendFailureAsync("The weather map could not be generated. The user should check the OpenWeather settings or try again.", cancellationToken);
 			return;
 		}
 
 		if (!bytes.Success || bytes.Value is not { Length: > 0 })
 		{
 			logger.LogWarning("No weather map could be generated for {Target}", target.Identifier);
-			await SendFailureAsync(bytes.UserVisibleError, cancelReply, cancellationToken);
+			await SendFailureAsync(bytes.UserVisibleError, cancellationToken);
 			return;
 		}
 
@@ -453,7 +453,7 @@ public class OpenWeatherChatAugmentationsServiceInstance(
 		if (string.IsNullOrWhiteSpace(location))
 		{
 			logger.LogInformation("Location is not set!");
-			await SendActionFeedbackAsync(missingLocationMessage, cancelReply, cancellationToken);
+			await SendFailureAsync(missingLocationMessage, cancellationToken);
 			return null;
 		}
 
@@ -648,11 +648,12 @@ public class OpenWeatherChatAugmentationsServiceInstance(
 		return Math.Round(value).ToString("0", CultureInfo.InvariantCulture);
 	}
 
-	private async Task SendFailureAsync(string? userVisibleError, bool cancelReply, CancellationToken cancellationToken)
+	private async Task SendFailureAsync(string? userVisibleError, CancellationToken cancellationToken)
 	{
-		await SendActionFeedbackAsync(string.IsNullOrWhiteSpace(userVisibleError)
-			? "OpenWeather could not complete the request. Check the module settings or try again later."
-			: userVisibleError, cancelReply, cancellationToken);
+		await session.SendSecretAsync(string.IsNullOrWhiteSpace(userVisibleError)
+			? "The weather request could not be completed. The user should check the OpenWeather settings or try again later."
+			: userVisibleError, cancellationToken);
+		await session.TriggerReplyAsync(cancellationToken);
 	}
 
 	private async Task SendActionResultAsync(string message, bool cancelReply, CancellationToken cancellationToken)

@@ -183,7 +183,7 @@ public class PhilipsHueChatAugmentationsServiceInstance(
             switch (serverActionMessage.Value)
             {
                 case "hueBridge_connect":
-                    await SendMessage(hue.LastUserVisibleError ?? "No connection to the Hue bridge could be made. Ensure you are on the same network and try again.", cancelReply, cancellationToken);
+                    await SendHueFailureOrDefault("The Hue bridge could not be reached. The user should make sure it is powered on and on the same network.", cancellationToken);
                     return true;
                 case "turn_lights_on":
                     if (!serverActionMessage.TryGetArgument("target", out var targetOnName) ||
@@ -202,7 +202,7 @@ public class PhilipsHueChatAugmentationsServiceInstance(
                         if (await hue.ControlAllLightsAsync(true))
                             await SendMessage("All Hue lights were turned on.", cancelReply, cancellationToken);
                         else
-                            await SendHueFailureOrDefault("Hue could not turn on all lights.", cancelReply, cancellationToken);
+                            await SendHueFailureOrDefault("The lights could not be turned on.", cancellationToken);
                         return true;
                     }
 
@@ -211,7 +211,7 @@ public class PhilipsHueChatAugmentationsServiceInstance(
                     if (await hue.SendHueCommandAsync((Guid)targetIdOn, typeOn, state: true))
                         await SendMessage($"Hue turned on {matchedNameOn ?? targetOnName}.", cancelReply, cancellationToken);
                     else
-                        await SendHueFailureOrDefault($"Hue could not turn on {matchedNameOn ?? targetOnName}.", cancelReply, cancellationToken);
+                        await SendHueFailureOrDefault($"The light '{matchedNameOn ?? targetOnName}' could not be turned on.", cancellationToken);
                     return true;
                 case "turn_lights_off":
                     if (!serverActionMessage.TryGetArgument("target", out var targetOffName) ||
@@ -230,7 +230,7 @@ public class PhilipsHueChatAugmentationsServiceInstance(
                         if (await hue.ControlAllLightsAsync(false))
                             await SendMessage("All Hue lights were turned off.", cancelReply, cancellationToken);
                         else
-                            await SendHueFailureOrDefault("Hue could not turn off all lights.", cancelReply, cancellationToken);
+                            await SendHueFailureOrDefault("The lights could not be turned off.", cancellationToken);
                         return true;
                     }
 
@@ -239,14 +239,14 @@ public class PhilipsHueChatAugmentationsServiceInstance(
                     if (await hue.SendHueCommandAsync((Guid)targetIdOff, typeOff, state: false))
                         await SendMessage($"Hue turned off {matchedNameOff ?? targetOffName}.", cancelReply, cancellationToken);
                     else
-                        await SendHueFailureOrDefault($"Hue could not turn off {matchedNameOff ?? targetOffName}.", cancelReply, cancellationToken);
+                        await SendHueFailureOrDefault($"The light '{matchedNameOff ?? targetOffName}' could not be turned off.", cancellationToken);
                     return true;
                 case "change_color":
                     if (!serverActionMessage.TryGetArgument("target", out var targetNameColor) ||
                         string.IsNullOrEmpty(targetNameColor))
                     {
-                        await SendMessage("/event No target specified.", cancelReply, cancellationToken);
-                        targetNameColor = null;
+                        await SendHueFailureOrDefault("The requested color change could not be completed because no light, room, or zone was specified.", cancellationToken);
+                        return true;
                     }
 
                     targetNameColor = CleanString(targetNameColor!);
@@ -257,7 +257,7 @@ public class PhilipsHueChatAugmentationsServiceInstance(
                     {
                         logger.LogWarning("No matching target found for '{TargetNameColor}'.", targetNameColor);
                         hue.SetNoActiveTarget($"No Hue light, room, or zone matched '{targetNameColor}'.");
-                        await SendHueFailureOrDefault($"No Hue light, room, or zone matched '{targetNameColor}'.", cancelReply, cancellationToken);
+                        await SendHueFailureOrDefault($"No Hue light, room, or zone matched '{targetNameColor}'.", cancellationToken);
                         return true;
                     }
 
@@ -265,7 +265,7 @@ public class PhilipsHueChatAugmentationsServiceInstance(
 
                     if (!serverActionMessage.TryGetArgument("color", out var colorName) || string.IsNullOrEmpty(colorName))
                     {
-                        await SendMessage("/event No Color specified.", cancelReply, cancellationToken);
+                        await SendHueFailureOrDefault($"The color of '{matchedNameColor ?? targetNameColor}' could not be changed because no color was specified.", cancellationToken);
                         return true;
                     }
 
@@ -277,21 +277,21 @@ public class PhilipsHueChatAugmentationsServiceInstance(
 
                     if (string.IsNullOrWhiteSpace(hexCode))
                     {
-                        await SendMessage($"Hue does not know the color '{colorName}'.", cancelReply, cancellationToken);
+                        await SendHueFailureOrDefault($"The color of '{matchedNameColor ?? targetNameColor}' could not be changed because Hue does not know the color '{colorName}'.", cancellationToken);
                         return true;
                     }
 
                     if (await hue.SendHueCommandAsync((Guid)targetIdColor, typeColor, state: true, color: hexCode))
                         await SendMessage($"Hue changed {matchedNameColor ?? targetNameColor} to {colorName}.", cancelReply, cancellationToken);
                     else
-                        await SendHueFailureOrDefault($"Hue could not change {matchedNameColor ?? targetNameColor} to {colorName}.", cancelReply, cancellationToken);
+                        await SendHueFailureOrDefault($"The color of '{matchedNameColor ?? targetNameColor}' could not be changed to {colorName}.", cancellationToken);
                     return true;
                 case "change_brightness":
                     if (!serverActionMessage.TryGetArgument("target", out var targetNameBrightness) ||
                         string.IsNullOrEmpty(targetNameBrightness))
                     {
-                        await SendMessage("/event No target specified.", cancelReply, cancellationToken);
-                        targetNameBrightness = null;
+                        await SendHueFailureOrDefault("The brightness could not be changed because no light, room, or zone was specified.", cancellationToken);
+                        return true;
                     }
 
                     targetNameBrightness = CleanString(targetNameBrightness!);
@@ -302,7 +302,7 @@ public class PhilipsHueChatAugmentationsServiceInstance(
                     {
                         logger.LogWarning("No matching target found for '{TargetNameBrightness}'.", targetNameBrightness);
                         hue.SetNoActiveTarget($"No Hue light, room, or zone matched '{targetNameBrightness}'.");
-                        await SendHueFailureOrDefault($"No Hue light, room, or zone matched '{targetNameBrightness}'.", cancelReply, cancellationToken);
+                        await SendHueFailureOrDefault($"No Hue light, room, or zone matched '{targetNameBrightness}'.", cancellationToken);
                         return true;
                     }
 
@@ -317,14 +317,14 @@ public class PhilipsHueChatAugmentationsServiceInstance(
                             brightness: brightnessLevel))
                         await SendMessage($"Hue changed the brightness of {matchedNameBrightness} to {brightnessLevel}.", cancelReply, cancellationToken);
                     else
-                        await SendHueFailureOrDefault($"Hue could not change the brightness of {matchedNameBrightness}.", cancelReply, cancellationToken);
+                        await SendHueFailureOrDefault($"The brightness of '{matchedNameBrightness}' could not be changed.", cancellationToken);
                     return true;
                 case "activate_scene":
                     if (!serverActionMessage.TryGetArgument("target", out var targetNameScene) ||
                         string.IsNullOrEmpty(targetNameScene))
                     {
-                        await SendMessage("/event No target specified.", cancelReply, cancellationToken);
-                        targetNameScene = null;
+                        await SendHueFailureOrDefault("The scene could not be activated because no room or zone was specified.", cancellationToken);
+                        return true;
                     }
 
                     targetNameScene = CleanString(targetNameScene!);
@@ -335,7 +335,7 @@ public class PhilipsHueChatAugmentationsServiceInstance(
                     {
                         logger.LogWarning("No matching target found for '{TargetNameScene}'.", targetNameScene);
                         hue.SetNoActiveTarget($"No Hue room, group, or zone matched '{targetNameScene}'.");
-                        await SendHueFailureOrDefault($"No Hue room, group, or zone matched '{targetNameScene}'.", cancelReply, cancellationToken);
+                        await SendHueFailureOrDefault($"No Hue room, group, or zone matched '{targetNameScene}'.", cancellationToken);
                         return true;
                     }
 
@@ -344,8 +344,8 @@ public class PhilipsHueChatAugmentationsServiceInstance(
 
                     if (!serverActionMessage.TryGetArgument("scene", out var sceneName) || string.IsNullOrEmpty(sceneName))
                     {
-                        await SendMessage("/event No scene specified.", cancelReply, cancellationToken);
-                        sceneName = null;
+                        await SendHueFailureOrDefault($"No scene was specified for {matchedNameSceneTarget}.", cancellationToken);
+                        return true;
                     }
 
                     sceneName = CleanString(sceneName!);
@@ -356,7 +356,7 @@ public class PhilipsHueChatAugmentationsServiceInstance(
                     {
                         logger.LogWarning("No matching scene found for '{SceneName}'.", sceneName);
                         hue.SetNoActiveTarget($"No Hue scene named '{sceneName}' was found for {matchedNameSceneTarget}.");
-                        await SendHueFailureOrDefault($"No Hue scene named '{sceneName}' was found for {matchedNameSceneTarget}.", cancelReply, cancellationToken);
+                        await SendHueFailureOrDefault($"No Hue scene named '{sceneName}' was found for {matchedNameSceneTarget}.", cancellationToken);
                         return true;
                     }
 
@@ -365,13 +365,13 @@ public class PhilipsHueChatAugmentationsServiceInstance(
                     if (await hue.SendHueCommandAsync((Guid)targetIdScene, typeSceneTarget, state: true, scene: matchedNameScene))
                         await SendMessage($"Hue activated scene {matchedNameScene} for {matchedNameSceneTarget}.", cancelReply, cancellationToken);
                     else
-                        await SendHueFailureOrDefault($"Hue could not activate scene {matchedNameScene} for {matchedNameSceneTarget}.", cancelReply, cancellationToken);
+                        await SendHueFailureOrDefault($"The scene '{matchedNameScene}' could not be activated for {matchedNameSceneTarget}.", cancellationToken);
                     return true;
                 case "show_emotion":
                     if (!serverActionMessage.TryGetArgument("color", out var colorEmotion) ||
                         string.IsNullOrEmpty(colorEmotion))
                     {
-                        await SendMessage("/event No Color specified.", cancelReply, cancellationToken);
+                        await SendHueFailureOrDefault("The character-controlled light could not be changed because no color was specified.", cancellationToken);
                         return true;
                     }
 
@@ -389,20 +389,20 @@ public class PhilipsHueChatAugmentationsServiceInstance(
                     if (targetIdEmotion == null || typeEmotion == null)
                     {
                         hue.SetNoActiveTarget("No Hue target is configured for character-controlled lighting.");
-                        await SendHueFailureOrDefault("No Hue target is configured for character-controlled lighting.", cancelReply, cancellationToken);
+                        await SendHueFailureOrDefault("No Hue target is configured for character-controlled lighting.", cancellationToken);
                         return true;
                     }
 
                     if (string.IsNullOrWhiteSpace(hexCodeEmotion))
                     {
-                        await SendMessage($"Hue does not know the color '{colorEmotion}'.", cancelReply, cancellationToken);
+                        await SendHueFailureOrDefault($"The character-controlled light could not be changed because Hue does not know the color '{colorEmotion}'.", cancellationToken);
                         return true;
                     }
 
                     if (await hue.SendHueCommandAsync((Guid)targetIdEmotion, typeEmotion, state: true, color: hexCodeEmotion))
                         await SendMessage($"Hue changed {matchedNameEmotion} to {colorEmotion}.", cancelReply, cancellationToken);
                     else
-                        await SendHueFailureOrDefault($"Hue could not change {matchedNameEmotion} to {colorEmotion}.", cancelReply, cancellationToken);
+                        await SendHueFailureOrDefault($"The character-controlled light '{matchedNameEmotion}' could not be changed to {colorEmotion}.", cancellationToken);
                     return true;
                 case "show_hue_inventory":
                     await SendMessage(BuildHueInventoryNote(), cancelReply, cancellationToken);
@@ -418,7 +418,7 @@ public class PhilipsHueChatAugmentationsServiceInstance(
         catch (Exception ex)
         {
             logger.LogError(ex, "Hue action '{Action}' failed unexpectedly.", serverActionMessage.Value);
-            await SendHueFailureOrDefault("Hue could not complete that request. Please check the bridge and try again.", cancelReply, cancellationToken);
+            await SendHueFailureOrDefault("The Hue request could not be completed. The user should check the bridge and try again.", cancellationToken);
             return true;
         }
     }
@@ -444,9 +444,10 @@ public class PhilipsHueChatAugmentationsServiceInstance(
         return session.SendNoteAsync(note, cancellationToken);
     }
 
-    private Task SendHueFailureOrDefault(string fallbackMessage, bool cancelReply, CancellationToken cancellationToken)
+    private async Task SendHueFailureOrDefault(string fallbackMessage, CancellationToken cancellationToken)
     {
-        return SendMessage(hue.LastUserVisibleError ?? fallbackMessage, cancelReply, cancellationToken);
+        await session.SendSecretAsync(hue.LastUserVisibleError ?? fallbackMessage, cancellationToken);
+        await session.TriggerReplyAsync(cancellationToken);
     }
 
     private static string CleanString(string? input)
