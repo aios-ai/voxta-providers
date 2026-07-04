@@ -130,8 +130,15 @@ public class SpotifyManager(
             {
                 try
                 {
-                    token = await RefreshTokenAsync(token.RefreshToken);
+                    token = await RefreshTokenAsync(token.RefreshToken, cancellationToken);
                     await SaveTokenAsync(token);
+                }
+                catch (Exception ex) when (IsInvalidGrant(ex))
+                {
+                    logger.LogWarning(ex, "Spotify refresh token is invalid or expired. Discarding stored token and requesting authorization again.");
+                    DiscardStoredToken();
+                    SetAuthorizationRequired();
+                    token = null;
                 }
                 catch (Exception ex)
                 {
@@ -249,14 +256,15 @@ public class SpotifyManager(
         var options = new JsonSerializerOptions { WriteIndented = true };
         var json = JsonSerializer.Serialize(token, options);
         await File.WriteAllTextAsync(config.TokenPath, json);
+        _spotifyAuthToken = token;
     }
 
-    private async Task<SpotifyAuthToken> RefreshTokenAsync(string refreshToken)
+    private async Task<SpotifyAuthToken> RefreshTokenAsync(string refreshToken, CancellationToken cancellationToken)
     {
         var auth = new OAuthClient();
         var refreshRequest = new AuthorizationCodeRefreshRequest(config.ClientId, config.ClientSecret, refreshToken);
 
-        var response = await auth.RequestToken(refreshRequest);
+        var response = await auth.RequestToken(refreshRequest, cancellationToken);
 
         return new SpotifyAuthToken
         {
@@ -283,6 +291,29 @@ public class SpotifyManager(
             SetAuthorizationRequired();
             return null;
         }
+    }
+
+    private void DiscardStoredToken()
+    {
+        _spotifyAuthToken = null;
+        _spotifyClient = null;
+
+        if (!File.Exists(config.TokenPath))
+            return;
+
+        try
+        {
+            File.Delete(config.TokenPath);
+        }
+        catch (Exception ex)
+        {
+            logger.LogWarning(ex, "Failed to delete expired Spotify token file at {TokenPath}.", config.TokenPath);
+        }
+    }
+
+    private static bool IsInvalidGrant(Exception ex)
+    {
+        return ex.Message.Contains("invalid_grant", StringComparison.OrdinalIgnoreCase);
     }
 
     public async Task<CurrentlyPlayingContext?> GetCurrentPlaybackState(CancellationToken cancellationToken)
